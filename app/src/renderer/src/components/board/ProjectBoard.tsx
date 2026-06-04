@@ -89,7 +89,7 @@ export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.El
   return (
     <div className="relative h-full w-full bg-canvas">
       <Confetti />
-      <div className="relative flex h-full gap-6 p-6">
+      <div className="relative mx-auto flex h-full w-full max-w-[1640px] gap-6 p-6">
         <Rail activeProjectId={projectId} />
 
         <main className="flex min-w-0 flex-1 flex-col gap-5 overflow-hidden">

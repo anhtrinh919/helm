@@ -37,6 +37,7 @@ export function ScopedSession({
   const steer = useFeed((s) => s.steer)
   const approveCheckpoint = useFeed((s) => s.approveCheckpoint)
   const retry = useFeed((s) => s.retry)
+  const startBuild = useFeed((s) => s.startBuild)
   const syncFeed = useFeed((s) => s.syncFeed)
   const feedEnd = useRef<HTMLDivElement>(null)
 
@@ -73,7 +74,7 @@ export function ScopedSession({
   return (
     <div className="relative h-full w-full bg-canvas">
       <Confetti />
-      <div className="relative flex h-full gap-6 p-6">
+      <div className="relative mx-auto flex h-full w-full max-w-[1640px] gap-6 p-6">
         <Rail activeProjectId={projectId} />
 
         <main className="flex min-w-0 flex-1 flex-col gap-4 overflow-hidden">
@@ -102,14 +103,31 @@ export function ScopedSession({
           <div className="flex min-h-0 flex-1 gap-5">
             {/* Feed column */}
             <div className="flex min-w-0 flex-1 flex-col overflow-y-auto rounded-[18px] brut bg-cream/50 p-5">
-              <div className="flex flex-col gap-3">
-                {events.length === 0 && status === 'active' && (
-                  <div className="text-sm text-soft">Getting started…</div>
-                )}
-                {events.map((ev) => (
-                  <FeedEventRow key={ev.id} event={ev} />
-                ))}
-              </div>
+              {status === 'idle' ? (
+                <div className="grid flex-1 place-items-center text-center">
+                  <div>
+                    <div className="font-display text-2xl font-black text-ink">Ready when you are</div>
+                    <div className="mt-1.5 max-w-sm text-soft">
+                      I’ll build “{title}” and narrate every step in plain English. Steer me any time.
+                    </div>
+                    <button
+                      onClick={() => void startBuild()}
+                      className="mt-5 rounded-full brut bg-lime px-6 py-3 text-sm font-bold text-ink"
+                    >
+                      Start building this
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {events.length === 0 && status === 'active' && (
+                    <div className="text-sm text-soft">Getting started…</div>
+                  )}
+                  {events.map((ev) => (
+                    <FeedEventRow key={ev.id} event={ev} />
+                  ))}
+                </div>
+              )}
 
               {status === 'done' && card && (
                 <div className="mt-5">
@@ -157,7 +175,7 @@ export function ScopedSession({
                 onReopen={(qid) => void reopen(qid)}
               />
               <SteeringInput
-                disabled={status === 'done' || status === 'error'}
+                disabled={status === 'idle' || status === 'done' || status === 'error'}
                 onSteer={(mode, text) => void steer(mode, text)}
               />
             </div>

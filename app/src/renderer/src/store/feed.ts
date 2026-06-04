@@ -18,8 +18,10 @@ interface FeedState {
   status: FeedStatus
   events: FeedEvent[]
   questions: QuestionQueueItem[]
-  /** Open a card's scoped session — reattach if one exists, else start a live build. */
+  /** Open a card's scoped session — reattach if running, else show it idle (user starts the build). */
   open: (projectId: string, cardId: string) => Promise<void>
+  /** Explicitly kick off the build for the open card (user-driven). */
+  startBuild: () => Promise<void>
   /** Reconcile feed + questions from the source of truth (backfill any gap). */
   syncFeed: (sessionId: string) => Promise<void>
   appendEvent: (ev: FeedEvent) => void
@@ -75,12 +77,30 @@ export const useFeed = create<FeedState>((set, get) => ({
       return
     }
 
-    const res = await helm.sessions.start(projectId, cardId)
+    // Only the active spotlight item auto-attaches. Everything else waits for
+    // the user to press "Start building" — building is user-driven, not implicit.
+    if (card?.status === 'building') {
+      const res = await helm.sessions.start(projectId, cardId)
+      if (isIpcError(res)) {
+        set({ status: 'error' })
+        return
+      }
+      set({ session: res.session, status: 'active' })
+      return
+    }
+    set({ status: 'idle' })
+  },
+
+  startBuild: async () => {
+    const { projectId, card } = get()
+    if (!projectId || !card) return
+    set({ status: 'active', events: [], questions: [] })
+    const res = await helm.sessions.start(projectId, card.id)
     if (isIpcError(res)) {
       set({ status: 'error' })
       return
     }
-    set({ session: res.session, status: 'active' })
+    set({ session: res.session })
   },
 
   syncFeed: async (sessionId) => {
@@ -140,7 +160,11 @@ export const useFeed = create<FeedState>((set, get) => ({
     const cardId = get().card?.id
     if (!cardId) return
     const res = await helm.cards.approveCheckpoint(cardId, verdict, note)
-    if (!isIpcError(res)) set({ card: res.card })
+    if (isIpcError(res)) return
+    set({ card: res.card })
+    // "Something's off" re-opens the build so it can take another pass — never
+    // leave the user stuck on a checkpoint they rejected.
+    if (verdict === 'flagged') await get().retry()
   },
 
   retry: async () => {

@@ -6,7 +6,7 @@ export function ProjectSwitcher(): React.JSX.Element {
   return (
     <div className="relative h-full w-full bg-canvas">
       <Confetti />
-      <div className="relative flex h-full gap-6 p-6">
+      <div className="relative mx-auto flex h-full w-full max-w-[1640px] gap-6 p-6">
         <Rail />
         <main className="flex flex-1 flex-col items-center justify-center text-center">
           <span className="-rotate-2 rounded-full brut-2 bg-lime px-4 py-1.5 text-[11px] font-bold tracking-[0.18em] text-ink">

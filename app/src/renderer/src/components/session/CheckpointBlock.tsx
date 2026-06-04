@@ -32,8 +32,12 @@ export function CheckpointBlock({
         {shot ? (
           <img src={shot} alt="Preview of what was built" className="w-full" />
         ) : (
-          <div className="grid h-40 place-items-center text-sm text-soft">
-            Preview of “{card.title}”
+          <div className="grid h-40 place-items-center gap-1.5 text-center">
+            <span className="text-2xl">🖼️</span>
+            <span className="text-sm font-semibold text-ink">“{card.title}” is built</span>
+            <span className="rounded-full bg-violetsoft px-2.5 py-0.5 text-[10px] font-black tracking-wide text-ink">
+              A live, clickable preview arrives in a later step
+            </span>
           </div>
         )}
       </div>
