@@ -8,7 +8,7 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { id: 'board', label: 'Board' },
-  { id: 'preview', label: 'Live Preview', phase: 2 },
+  { id: 'preview', label: 'Live Preview' },
   { id: 'fix', label: 'Point & Fix', phase: 3 },
   { id: 'decisions', label: 'Decisions', phase: 4 },
   { id: 'progress', label: 'Progress', phase: 4 },

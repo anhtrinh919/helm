@@ -7,6 +7,7 @@ import { Confetti } from '../Confetti'
 import { Rail } from '../Rail'
 import { TopBar } from './TopBar'
 import { TabStrip, StubPanel, type BoardTab } from './TabStrip'
+import { LivePreviewPane } from './LivePreviewPane'
 import { SectionHeader } from './SectionHeader'
 import { SpineItem } from './SpineItem'
 import { NeedsYouHeadline } from './NeedsYouHeadline'
@@ -96,7 +97,9 @@ export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.El
           <TopBar projectName={projectName} building={building} />
           <TabStrip active={tab} onSelect={setTab} />
 
-          {tab !== 'board' ? (
+          {tab === 'preview' ? (
+            <LivePreviewPane projectId={projectId} />
+          ) : tab !== 'board' ? (
             <StubPanel tab={tab} />
           ) : (
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">

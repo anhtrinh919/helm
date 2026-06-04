@@ -19,6 +19,7 @@
   --color-orange: #ff7a29;
   --color-orangesoft: #ffd6b8;
   --color-mint: #7fd4b0;
+  --color-stage: #f7f2ea; /* neutral surround the embedded running app sits in */
 
   --font-display: 'Fraunces', Georgia, serif;
   --font-ui: 'Space Grotesk', system-ui, sans-serif;

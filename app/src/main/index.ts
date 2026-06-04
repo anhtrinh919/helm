@@ -23,6 +23,10 @@ function createWindow(): void {
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.mjs'),
       sandbox: false,
+      // Live Preview embeds the built app's running dev server in a <webview>.
+      // The embedded app gets NO Node access (contextIsolation default + no
+      // nodeIntegration); it is just a rendered URL.
+      webviewTag: true,
     },
   })
 
