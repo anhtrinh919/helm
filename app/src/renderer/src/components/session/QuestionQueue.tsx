@@ -27,7 +27,15 @@ export function QuestionQueue({
       ) : (
         <div className="mt-3 flex flex-col gap-2">
           {questions.map((q) => (
-            <DecisionCard key={q.id} question={q} onAnswer={onAnswer} onReopen={onReopen} compact />
+            <DecisionCard
+              key={q.id}
+              prompt={q.prompt}
+              answered={q.status === 'answered'}
+              answer={q.answer}
+              onAnswer={(a) => onAnswer(q.id, a)}
+              onReopen={() => onReopen(q.id)}
+              compact
+            />
           ))}
         </div>
       )}

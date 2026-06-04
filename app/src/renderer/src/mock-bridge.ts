@@ -338,8 +338,15 @@ export function createMockBridge(): HelmApi {
       reopenQuestion: async (sessionId, questionId) => {
         const q = (questionsBySession[sessionId] ?? []).find((x) => x.id === questionId)
         if (!q) return { error: 'not_found' }
+        if (q.status === 'pending') return { error: 'cannot_reopen' }
         q.status = 'reopened'
         questionListeners.forEach((cb) => cb({ sessionId, question: q }))
+        emitFeed(sessionId, 'narration', 'You re-opened a question — I’ll wait for your updated answer.')
+        const c = sessionCard[sessionId]
+        if (c) {
+          c.status = 'needs_you'
+          pushBoard(c)
+        }
         return { question: q }
       },
     },

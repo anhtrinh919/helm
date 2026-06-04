@@ -128,4 +128,26 @@ describe('SessionOrchestrator', () => {
     const { orch } = setup()
     expect(orch.steer('nope', 'interrupt', 'stop')).toBe(false)
   })
+
+  it('reopen re-blocks the build, narrates it, and nudges the engine', () => {
+    const { fr, orch, projectId, cardId } = setup()
+    const session = orch.start(projectId, cardId)
+    const q = createQuestion(db, session.id, { type: 'freetext', question: 'CSV or PDF?' }, 0)
+    orch.answerDecision(session.id, q.id, 'CSV')
+    fr.replyCalls.length = 0
+
+    const reopened = orch.reopen(session.id, q.id)
+    expect(reopened.status).toBe('reopened')
+    expect(getSession(db, session.id).status).toBe('paused_for_decision')
+    expect(getCard(db, cardId).status).toBe('needs_you')
+    expect(getEvents(db, session.id).some((e) => e.kind === 'narration' && /re-opened/i.test(e.text))).toBe(true)
+    expect(fr.replyCalls.length).toBe(1)
+  })
+
+  it('reopen of a still-pending question throws', () => {
+    const { orch, projectId, cardId } = setup()
+    const session = orch.start(projectId, cardId)
+    const q = createQuestion(db, session.id, { type: 'freetext', question: 'Pending?' }, 0)
+    expect(() => orch.reopen(session.id, q.id)).toThrow()
+  })
 })

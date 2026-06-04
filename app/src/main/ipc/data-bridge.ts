@@ -7,7 +7,6 @@ import {
   CreateCardRequest,
   UpdateCardStatusRequest,
   ApproveCheckpointRequest,
-  ReopenQuestionRequest,
   type Card,
   type IpcError,
 } from '../../shared/ipc-schemas'
@@ -26,7 +25,6 @@ import {
   updateCheckpoint,
   promoteNextPlanned,
 } from '../db/cards'
-import { reopenQuestion } from '../db/question-queue'
 
 type GetWindow = () => BrowserWindow | null
 
@@ -115,12 +113,4 @@ export function registerDataBridge(db: Db, getWindow: GetWindow): void {
     }
   })
 
-  ipcMain.handle(CH.sessionsReopenQuestion, (_e, raw: unknown) => {
-    try {
-      const { questionId } = ReopenQuestionRequest.parse(raw)
-      return { question: reopenQuestion(db, questionId) }
-    } catch (e) {
-      return mapError(e)
-    }
-  })
 }

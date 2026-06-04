@@ -17,7 +17,8 @@ import {
   updateSessionStatus,
 } from '../db/sessions'
 import { appendEvent } from '../db/feed-events'
-import { answerQuestion, createQuestion, nextPosition } from '../db/question-queue'
+import { answerQuestion, createQuestion, nextPosition, reopenQuestion } from '../db/question-queue'
+import type { QuestionQueueItem } from '../../shared/ipc-schemas'
 import { transform } from './event-transformer'
 import {
   startSession,
@@ -178,6 +179,32 @@ export class SessionOrchestrator {
 
     const handle = this.handles.get(sessionId)
     if (handle) handle.reply(answer)
+  }
+
+  /** Re-open an answered decision: re-block the build and wait for a new answer. */
+  reopen(sessionId: string, questionId: string): QuestionQueueItem {
+    const question = reopenQuestion(this.db, questionId) // throws if still pending
+    this.send(CH.questionUpdate, { sessionId, question })
+    this.emit(
+      this.mkEvent(
+        sessionId,
+        'narration',
+        'You re-opened a question — I’ll wait for your updated answer.',
+      ),
+    )
+    updateSessionStatus(this.db, sessionId, 'paused_for_decision')
+    const session = getSession(this.db, sessionId)
+    if (session.cardId) {
+      try {
+        this.pushBoard(updateCardStatus(this.db, session.cardId, 'needs_you'))
+      } catch {
+        /* card may not allow the transition */
+      }
+    }
+    this.pushBackground(session.projectId)
+    const handle = this.handles.get(sessionId)
+    if (handle) handle.reply(`I want to reconsider: ${question.prompt.question}`)
+    return question
   }
 
   private finish(sessionId: string, projectId: string, cardId: string): void {

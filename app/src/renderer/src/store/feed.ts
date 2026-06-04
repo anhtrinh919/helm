@@ -147,7 +147,10 @@ export const useFeed = create<FeedState>((set, get) => ({
     const sid = get().session?.id
     if (!sid) return
     const res = await helm.sessions.reopenQuestion(sid, questionId)
-    if (!isIpcError(res)) get().upsertQuestion(res.question)
+    if (!isIpcError(res)) {
+      get().upsertQuestion(res.question)
+      set({ status: 'paused_for_decision' })
+    }
   },
 
   steer: async (mode, text) => {

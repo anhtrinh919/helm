@@ -6,6 +6,7 @@ import {
   SteerRequest,
   AnswerDecisionRequest,
   GetQuestionsRequest,
+  ReopenQuestionRequest,
   type IpcError,
 } from '../../shared/ipc-schemas'
 import type { Db } from '../db/connection'
@@ -64,6 +65,15 @@ export function registerSessionBridge(db: Db, orchestrator: SessionOrchestrator)
     try {
       const { sessionId } = GetQuestionsRequest.parse(raw)
       return { questions: listQuestions(db, sessionId) }
+    } catch (e) {
+      return mapError(e)
+    }
+  })
+
+  ipcMain.handle(CH.sessionsReopenQuestion, (_e, raw: unknown) => {
+    try {
+      const { sessionId, questionId } = ReopenQuestionRequest.parse(raw)
+      return { question: orchestrator.reopen(sessionId, questionId) }
     } catch (e) {
       return mapError(e)
     }
