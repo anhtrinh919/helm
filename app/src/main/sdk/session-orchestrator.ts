@@ -13,7 +13,7 @@ import {
   setPendingCheckpoint,
   updateCardStatus,
 } from '../db/cards'
-import { NotAwaitingDecisionError, SpotlightOccupiedError } from '../db/errors'
+import { ArtifactDirError, NotAwaitingDecisionError, SpotlightOccupiedError } from '../db/errors'
 import {
   createSession,
   getSession,
@@ -147,7 +147,11 @@ export class SessionOrchestrator {
     let cwd = tmpdir()
     let allowedTools: string[] | undefined = []
     if (real && this.devServer) {
-      cwd = this.devServer.ensureArtifactDir(projectId)
+      try {
+        cwd = this.devServer.ensureArtifactDir(projectId)
+      } catch (e) {
+        throw new ArtifactDirError(e instanceof Error ? e.message : 'could not create working directory')
+      }
       allowedTools = undefined // all tools enabled
       const step = createBuildStep(this.db, projectId, session.id, cardId)
       this.buildStepBySession.set(session.id, step.id)

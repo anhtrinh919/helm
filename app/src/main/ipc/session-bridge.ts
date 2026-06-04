@@ -11,6 +11,7 @@ import {
 } from '../../shared/ipc-schemas'
 import type { Db } from '../db/connection'
 import {
+  ArtifactDirError,
   CannotReopenError,
   NotAwaitingDecisionError,
   NotFoundError,
@@ -26,6 +27,7 @@ function mapError(e: unknown): IpcError {
   if (e instanceof NotAwaitingDecisionError) return { error: 'not_awaiting_decision' }
   if (e instanceof NotFoundError) return { error: 'not_found' }
   if (e instanceof CannotReopenError) return { error: 'cannot_reopen' }
+  if (e instanceof ArtifactDirError) return { error: 'artifact_dir_failed', message: e.message }
   if (e instanceof ZodError) {
     const first = e.issues[0]
     return { error: 'validation_failed', field: first?.path.join('.'), message: first?.message }

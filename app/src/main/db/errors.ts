@@ -59,3 +59,8 @@ export class StartFailedError extends Error {
 export class DevServerNotRunningError extends Error {
   readonly code = 'not_running' as const
 }
+
+/** Could not create the project's on-disk working directory (real pipeline). */
+export class ArtifactDirError extends Error {
+  readonly code = 'artifact_dir_failed' as const
+}

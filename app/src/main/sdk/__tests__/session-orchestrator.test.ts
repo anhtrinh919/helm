@@ -15,7 +15,7 @@ import {
   type SpawnedServer,
 } from '../dev-server-manager'
 import type { SessionCallbacks, SessionHandle, StartSessionOptions } from '../session-runner'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -321,6 +321,18 @@ describe('SessionOrchestrator — real pipeline', () => {
     expect(getCard(db, cardId).status).toBe('failed')
     // handleCrash drove a snag (and recovered to live, since the fake server starts fine)
     expect(states).toContain('snag')
+  })
+
+  it('surfaces artifact_dir_failed when the working directory cannot be created', () => {
+    const fr = capturingRunner()
+    // artifactRoot points INTO a file, so mkdir of <file>/<projectId> throws.
+    const file = join(mkdtempSync(join(tmpdir(), 'helm-bad-')), 'not-a-dir')
+    writeFileSync(file, 'x')
+    const devServer = new DevServerManager(db, () => {}, fakeDevServerDeps(), file)
+    const orch = new SessionOrchestrator(db, () => null, fr.runner, devServer)
+    const project = createProject(db, 'P')
+    const card = createCard(db, project.id, 'feature', 'X')
+    expect(() => orch.start(project.id, card.id)).toThrow(/working directory|ENOTDIR|not a directory/i)
   })
 
   it('without a DevServerManager the path stays narration-only (no build steps, sandboxed)', () => {
