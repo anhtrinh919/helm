@@ -5,6 +5,7 @@ import { FrontDoor } from './components/FrontDoor'
 import { ProjectSwitcher } from './components/ProjectSwitcher'
 import { ProjectBoard } from './components/board/ProjectBoard'
 import { ScopedSession } from './components/session/ScopedSession'
+import { WizardScreen } from './components/wizard/WizardScreen'
 
 export default function App(): React.JSX.Element {
   const view = useProjects((s) => s.view)
@@ -21,6 +22,7 @@ export default function App(): React.JSX.Element {
 
   if (view.name === 'front-door') return <FrontDoor />
   if (view.name === 'switcher') return <ProjectSwitcher />
+  if (view.name === 'wizard') return <WizardScreen projectId={view.projectId} />
   if (view.name === 'session') {
     return (
       <ScopedSession

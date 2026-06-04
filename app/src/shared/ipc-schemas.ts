@@ -173,6 +173,38 @@ export const ApproveCheckpointRequest = z.object({
 export const ReopenQuestionRequest = z.object({ sessionId: z.string(), questionId: z.string() })
 export const GetFeedRequest = z.object({ sessionId: z.string(), afterId: z.string().optional() })
 
+export const StartScopingRequest = z.object({
+  projectId: z.string(),
+  idea: z.string().min(1).max(2000),
+})
+export const AnswerScopingRequest = z.object({
+  sessionId: z.string(),
+  answer: z.string().min(1).max(2000),
+})
+export const ApprovePlanRequest = z.object({
+  projectId: z.string(),
+  name: z.string().min(1).max(200),
+  plan: z.array(PlanBlock).min(1),
+})
+
+/** The scoping session's reply: another question, or the finished plan. */
+export const WizardScopingResponse = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('question'),
+    sessionId: z.string(),
+    question: DecisionPrompt,
+    step: z.number(),
+    total: z.number(),
+  }),
+  z.object({
+    kind: z.literal('plan'),
+    sessionId: z.string(),
+    name: z.string(),
+    plan: z.array(PlanBlock),
+  }),
+])
+export type WizardScopingResponse = z.infer<typeof WizardScopingResponse>
+
 export const StartSessionRequest = z.object({ projectId: z.string(), cardId: z.string() })
 export const SteerRequest = z.object({
   sessionId: z.string(),
@@ -233,6 +265,10 @@ export const CH = {
   sessionsSteer: 'sessions:steer',
   sessionsAnswerDecision: 'sessions:answer-decision',
   sessionsGetQuestions: 'sessions:get-questions',
+  // new project wizard (Group 6)
+  wizardStartScoping: 'wizard:start-scoping',
+  wizardAnswer: 'wizard:answer-question',
+  wizardApprove: 'wizard:approve-plan',
   // pushes
   feedEvent: 'feed:event',
   boardUpdate: 'board:update',

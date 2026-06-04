@@ -184,6 +184,40 @@ export function createMockBridge(): HelmApi {
     }, 4200)
   }
 
+  /* ----------------------- wizard (scripted scoping) ----------------------- */
+
+  const wizardSessions: Record<string, { asked: number; idea: string }> = {}
+  const SCRIPT: { type: 'buttons' | 'freetext'; question: string; options?: string[] }[] = [
+    { type: 'buttons', question: 'Who will use this?', options: ['Just me', 'My team', 'My customers'] },
+    { type: 'freetext', question: 'What’s the single most important thing it needs to do?' },
+    {
+      type: 'buttons',
+      question: 'How should people sign in?',
+      options: ['Email & password', 'Magic link', 'No login needed'],
+    },
+  ]
+  const WTOTAL = SCRIPT.length
+
+  const niceName = (idea: string): string => {
+    const stop = new Set(['app', 'application', 'and', 'for', 'with', 'that', 'our', 'export'])
+    const words = idea
+      .toLowerCase()
+      .replace(/^(i want to build |i wanna build |build |a |an |the )/g, '')
+      .split(/[\s,]+/)
+      .filter((w) => w.length > 2 && !stop.has(w))
+    const pick = words.slice(0, 2).map((w) => w[0]!.toUpperCase() + w.slice(1))
+    return pick.join(' ') || 'New Project'
+  }
+
+  const scriptedPlan = (): { id: string; title: string; detail: string }[] =>
+    [
+      ['Set up the project shell', 'Create the app skeleton and prepare the workspace.'],
+      ['Accounts and sign-in', 'Let the right people in and keep their data safe.'],
+      ['Capture entries', 'The main screen where people add what matters.'],
+      ['Organize and review', 'Browse, filter, and make sense of everything captured.'],
+      ['Reports and export', 'Turn the data into something shareable.'],
+    ].map(([title, detail]) => ({ id: uid(), title: title!, detail: detail! }))
+
   const promoteNextPlanned = (projectId: string): void => {
     const next = (cards[projectId] ?? [])
       .filter((c) => c.status === 'planned')
@@ -307,6 +341,49 @@ export function createMockBridge(): HelmApi {
         q.status = 'reopened'
         questionListeners.forEach((cb) => cb({ sessionId, question: q }))
         return { question: q }
+      },
+    },
+    wizard: {
+      startScoping: async (_projectId, idea) => {
+        const sessionId = uid()
+        wizardSessions[sessionId] = { asked: 1, idea }
+        return { kind: 'question' as const, sessionId, question: SCRIPT[0]!, step: 1, total: WTOTAL }
+      },
+      answerScoping: async (sessionId, _answer) => {
+        const ws = wizardSessions[sessionId]
+        if (!ws) return { error: 'not_found' }
+        const idx = ws.asked
+        if (idx < SCRIPT.length) {
+          ws.asked = idx + 1
+          return { kind: 'question' as const, sessionId, question: SCRIPT[idx]!, step: ws.asked, total: WTOTAL }
+        }
+        return { kind: 'plan' as const, sessionId, name: niceName(ws.idea), plan: scriptedPlan() }
+      },
+      approvePlan: async (projectId, name, plan) => {
+        const project = projects.find((p) => p.id === projectId)
+        if (!project) return { error: 'not_found' }
+        project.name = name
+        project.status = 'building'
+        project.backgroundStatus = 'idle'
+        const seeded: Card[] = plan.map((b, i) => ({
+          id: uid(),
+          projectId,
+          type: 'feature',
+          title: b.title,
+          status: 'planned',
+          source: 'plan_seed',
+          position: i,
+          stepLabel: `Step ${i + 1} of ${plan.length}: ${b.title}`,
+          dependsOn: [],
+          createdAt: now,
+          updatedAt: now,
+          sessionId: null,
+          decisionPrompt: null,
+          checkpoint: null,
+        }))
+        cards[projectId] = seeded
+        seeded.forEach((c) => pushBoard(c))
+        return { project, cards: seeded }
       },
     },
     events: {

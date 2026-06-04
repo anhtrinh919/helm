@@ -2,10 +2,11 @@ import { useState } from 'react'
 import { Confetti } from './Confetti'
 import { BrandMark } from './BrandMark'
 import { useProjects } from '../store/projects'
+import { useWizard } from '../store/wizard'
 
-/** F1 — the front door: a single plain-language sentence is the entry point. */
+/** F1/F3 — the front door: one plain-language sentence kicks off the scoping wizard. */
 export function FrontDoor(): React.JSX.Element {
-  const createFromIdea = useProjects((s) => s.createFromIdea)
+  const begin = useWizard((s) => s.begin)
   const hasProjects = useProjects((s) => s.projects.length > 0)
   const backToSwitcher = useProjects((s) => s.backToSwitcher)
   const [idea, setIdea] = useState('')
@@ -14,7 +15,7 @@ export function FrontDoor(): React.JSX.Element {
   const submit = async (): Promise<void> => {
     if (!idea.trim() || busy) return
     setBusy(true)
-    await createFromIdea(idea)
+    await begin(idea)
   }
 
   return (

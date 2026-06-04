@@ -24,6 +24,12 @@ const api: HelmApi = {
     reopenQuestion: (sessionId, questionId) =>
       ipcRenderer.invoke(CH.sessionsReopenQuestion, { sessionId, questionId }),
   },
+  wizard: {
+    startScoping: (projectId, idea) => ipcRenderer.invoke(CH.wizardStartScoping, { projectId, idea }),
+    answerScoping: (sessionId, answer) => ipcRenderer.invoke(CH.wizardAnswer, { sessionId, answer }),
+    approvePlan: (projectId, name, plan) =>
+      ipcRenderer.invoke(CH.wizardApprove, { projectId, name, plan }),
+  },
   events: {
     onBoardUpdate: (cb) => subscribe(CH.boardUpdate, cb),
     onBackgroundStatus: (cb) => subscribe(CH.backgroundStatus, cb),

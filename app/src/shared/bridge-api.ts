@@ -5,11 +5,13 @@ import type {
   CardStatus,
   FeedEvent,
   FeedEventPush,
+  PlanBlock,
   Project,
   QuestionQueueItem,
   QuestionUpdatePush,
   Session,
   SteerMode,
+  WizardScopingResponse,
   Result,
 } from './ipc-schemas'
 
@@ -49,6 +51,18 @@ export interface HelmApi {
       sessionId: string,
       questionId: string,
     ): Promise<Result<{ question: QuestionQueueItem }>>
+  }
+  wizard: {
+    /** Start the scoping conversation for a new project; returns the first question. */
+    startScoping(projectId: string, idea: string): Promise<Result<WizardScopingResponse>>
+    /** Answer the current scoping question; returns the next question or the finished plan. */
+    answerScoping(sessionId: string, answer: string): Promise<Result<WizardScopingResponse>>
+    /** Approve the plan: seeds the board and names the project. */
+    approvePlan(
+      projectId: string,
+      name: string,
+      plan: PlanBlock[],
+    ): Promise<Result<{ project: Project; cards: Card[] }>>
   }
   events: {
     onBoardUpdate(cb: (p: BoardUpdatePush) => void): () => void

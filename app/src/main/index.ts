@@ -5,7 +5,9 @@ import { recoverActiveSessions } from './db/sessions'
 import { registerFeedBridge } from './ipc/feed-bridge'
 import { registerDataBridge } from './ipc/data-bridge'
 import { registerSessionBridge } from './ipc/session-bridge'
+import { registerWizardBridge } from './ipc/wizard-bridge'
 import { SessionOrchestrator } from './sdk/session-orchestrator'
+import { WizardOrchestrator } from './sdk/wizard-orchestrator'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -38,9 +40,11 @@ void app.whenReady().then(() => {
 
   const getWindow = (): BrowserWindow | null => mainWindow
   const orchestrator = new SessionOrchestrator(db, getWindow)
+  const wizard = new WizardOrchestrator(db)
   registerFeedBridge(getWindow)
   registerDataBridge(db, getWindow)
   registerSessionBridge(db, orchestrator)
+  registerWizardBridge(db, wizard, getWindow)
 
   createWindow()
   app.on('activate', () => {

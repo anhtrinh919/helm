@@ -5,6 +5,7 @@ import { isIpcError, type BackgroundStatus, type Project } from '@shared/ipc-sch
 export type View =
   | { name: 'front-door' }
   | { name: 'switcher' }
+  | { name: 'wizard'; projectId: string }
   | { name: 'board'; projectId: string }
   | { name: 'session'; projectId: string; cardId: string }
 
@@ -14,8 +15,8 @@ interface ProjectsState {
   view: View
   init: () => Promise<void>
   refresh: () => Promise<void>
-  createFromIdea: (idea: string) => Promise<void>
   open: (projectId: string) => void
+  openWizard: (projectId: string) => void
   openSession: (projectId: string, cardId: string) => void
   backToBoard: (projectId: string) => void
   newBuild: () => void
@@ -47,17 +48,8 @@ export const useProjects = create<ProjectsState>((set) => ({
     if (!isIpcError(res)) set({ projects: res.projects })
   },
 
-  createFromIdea: async (idea) => {
-    const name = idea.trim().slice(0, 60) || 'Untitled build'
-    const res = await helm.projects.create(name)
-    if (isIpcError(res)) return
-    set((s) => ({
-      projects: [res.project, ...s.projects],
-      view: { name: 'board', projectId: res.project.id },
-    }))
-  },
-
   open: (projectId) => set({ view: { name: 'board', projectId } }),
+  openWizard: (projectId) => set({ view: { name: 'wizard', projectId } }),
   openSession: (projectId, cardId) => set({ view: { name: 'session', projectId, cardId } }),
   backToBoard: (projectId) => set({ view: { name: 'board', projectId } }),
   newBuild: () => set({ view: { name: 'front-door' } }),
