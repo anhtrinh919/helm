@@ -10,7 +10,6 @@ import { registerWizardBridge } from './ipc/wizard-bridge'
 import { registerPreviewBridge } from './ipc/preview-bridge'
 import { SessionOrchestrator } from './sdk/session-orchestrator'
 import { DevServerManager } from './sdk/dev-server-manager'
-import { clearAllDevPids, resumeDevServers } from './sdk/preview-resume'
 import { WizardOrchestrator } from './sdk/wizard-orchestrator'
 
 let mainWindow: BrowserWindow | null = null
@@ -72,11 +71,11 @@ void app.whenReady().then(() => {
   createWindow()
   // Reconnect or restart each project's dev server so the Live Preview survives
   // an app relaunch. Non-blocking — the window shows immediately.
-  void resumeDevServers(db, devServer)
+  void devServer.resumeAll()
 
   // Clear stored dev PIDs on quit; the child processes die with the app, so a
   // persisted PID would be stale next launch.
-  app.on('before-quit', () => clearAllDevPids(db))
+  app.on('before-quit', () => devServer.clearAllPids())
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

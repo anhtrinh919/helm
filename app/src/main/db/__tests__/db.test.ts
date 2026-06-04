@@ -16,7 +16,6 @@ import {
   createBuildStep,
   completeBuildStep,
   failBuildStep,
-  snaggingBuildStep,
   getLatestBuildStep,
 } from '../build-steps'
 import {
@@ -245,12 +244,11 @@ describe('migration 3 — artifact tracking + build steps', () => {
     expect(getLatestBuildStep(db, p.id)!.id).toBe(step.id)
   })
 
-  it('build step can fail or snag', () => {
+  it('build step can fail', () => {
     const p = createProject(db, 'Build2')
     const card = createCard(db, p.id, 'feature', 'X')
     const session = createSession(db, p.id, card.id, 'X')
     const s1 = createBuildStep(db, p.id, session.id, card.id)
-    expect(snaggingBuildStep(db, s1.id).status).toBe('snag')
     expect(failBuildStep(db, s1.id).status).toBe('failed')
   })
 

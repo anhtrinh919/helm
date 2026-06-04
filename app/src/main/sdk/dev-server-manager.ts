@@ -6,8 +6,19 @@ import { get as httpGet } from 'node:http'
 import { z } from 'zod'
 import type { PreviewState } from '../../shared/ipc-schemas'
 import type { Db } from '../db/connection'
-import { getArtifactDir, setArtifactDir, setDevPid } from '../db/projects'
+import {
+  getArtifactDir,
+  listProjectsWithArtifacts,
+  setArtifactDir,
+  setDevPid,
+} from '../db/projects'
 import { AlreadyRunningError, NoArtifactError, StartFailedError } from '../db/errors'
+
+/** The one rule for a project's local dev URL. Used by spawn AND resume so the
+ *  two never drift (scheme/host changes happen in exactly one place). */
+function manifestUrl(port: number): string {
+  return `http://localhost:${port}`
+}
 
 /**
  * Owns the per-project dev server as a child process. This is the ONLY place
@@ -65,7 +76,7 @@ export function defaultDeps(): DevServerDeps {
     spawnServer: (cwd, manifest) => {
       // The start command is the agent's declared `npm run dev`-style command.
       const child = spawn(manifest.startCommand, { cwd, shell: true, stdio: 'ignore' })
-      const url = `http://localhost:${manifest.port}`
+      const url = manifestUrl(manifest.port)
       return {
         pid: child.pid ?? -1,
         url,
@@ -231,18 +242,34 @@ export class DevServerManager {
       setDevPid(this.db, projectId, null)
       return
     }
-    if (this.isRunning(projectId)) {
-      // The server outlived the app — we don't hold its child handle, but the
-      // manifest tells us the URL, so the preview can point at it again.
-      this.setState(projectId, { status: 'live', url: `http://localhost:${manifest.port}` })
+    // Only reuse a surviving server if its URL actually answers — a live PID
+    // alone is not proof (the OS recycles PIDs), so we probe before trusting it.
+    const url = manifestUrl(manifest.port)
+    if (this.isRunning(projectId) && (await this.deps.probe(url, 2000))) {
+      this.setState(projectId, { status: 'live', url })
       return
     }
-    // Stale/dead PID — clear it and try to bring a fresh server up.
+    // Stale/dead/foreign PID — clear it and try to bring a fresh server up.
     setDevPid(this.db, projectId, null)
     try {
       await this.start(projectId)
     } catch {
       this.setState(projectId, { status: 'none' })
+    }
+  }
+
+  /** Reconnect/restart every artifact-bearing project's preview (app relaunch). */
+  async resumeAll(): Promise<void> {
+    for (const p of listProjectsWithArtifacts(this.db)) {
+      await this.resume(p.id)
+    }
+  }
+
+  /** Clear every stored dev PID (clean quit). Child processes die with the app,
+   *  so a persisted PID would be stale — and could match an unrelated process. */
+  clearAllPids(): void {
+    for (const p of listProjectsWithArtifacts(this.db)) {
+      if (p.devPid != null) setDevPid(this.db, p.id, null)
     }
   }
 

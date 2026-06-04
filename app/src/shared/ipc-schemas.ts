@@ -50,8 +50,10 @@ export type CheckpointStatus = z.infer<typeof CheckpointStatus>
 export const DecisionPromptType = z.enum(['buttons', 'freetext', 'plan_approval'])
 export type DecisionPromptType = z.infer<typeof DecisionPromptType>
 
-/** A real build step's lifecycle (Phase 2 — the real-file pipeline). */
-export const BuildStepStatus = z.enum(['running', 'complete', 'failed', 'snag'])
+/** A real build step's OUTCOME (Phase 2 — the real-file pipeline). This is an
+ *  audit record of the build, NOT a mirror of the live preview: snag/blocked are
+ *  dev-server runtime states owned solely by DevServerManager, never persisted here. */
+export const BuildStepStatus = z.enum(['running', 'complete', 'failed'])
 export type BuildStepStatus = z.infer<typeof BuildStepStatus>
 
 /** What the Live Preview pane is showing for a project. */

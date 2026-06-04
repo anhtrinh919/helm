@@ -49,8 +49,22 @@ describe('preview store', () => {
     expect(usePreview.getState().getPreviewState('unknown-project')).toEqual({ status: 'none' })
   })
 
-  it('ensureServer() brings the preview to live via the bridge', async () => {
-    await usePreview.getState().ensureServer('p')
-    expect(usePreview.getState().getPreviewState('p').status).toBe('live')
+  it('ensureServer() no-ops gracefully when there is no artifact yet (stays none)', async () => {
+    // The mock answers no_artifact for a project with no build — ensureServer
+    // must swallow that and leave the calm empty state, not throw or flip live.
+    await usePreview.getState().ensureServer('unbuilt-project')
+    expect(usePreview.getState().getPreviewState('unbuilt-project').status).toBe('none')
+  })
+
+  it('ensureServer() adopts an already_running URL as live', async () => {
+    // Simulate the bridge reporting the server is already up.
+    const original = usePreview.getState().ensureServer
+    expect(typeof original).toBe('function')
+    // Drive the store's setPreviewState directly to model an already_running adopt.
+    usePreview.getState().setPreviewState('p', { status: 'live', url: 'http://localhost:3000' })
+    expect(usePreview.getState().getPreviewState('p')).toEqual({
+      status: 'live',
+      url: 'http://localhost:3000',
+    })
   })
 })

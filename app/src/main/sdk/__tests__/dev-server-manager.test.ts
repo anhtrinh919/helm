@@ -9,7 +9,6 @@ import {
   type HelmManifest,
   type SpawnedServer,
 } from '../dev-server-manager'
-import { clearAllDevPids, resumeDevServers } from '../preview-resume'
 
 /** A controllable fake of the process world. */
 function fakeDeps(opts?: { probeOk?: () => boolean; hasManifest?: boolean; alivePids?: Set<number> }) {
@@ -211,7 +210,7 @@ describe('DevServerManager', () => {
     expect(new DevServerManager(db, recorder().onChange, deps).isRunning(pid)).toBe(false)
   })
 
-  it('resumeDevServers brings every artifact-bearing project back; clearAllDevPids wipes PIDs', async () => {
+  it('resumeAll brings every artifact-bearing project back; clearAllPids wipes PIDs', async () => {
     const rec = recorder()
     const { deps, alivePids } = fakeDeps()
     const a = projectWithArtifact()
@@ -219,11 +218,11 @@ describe('DevServerManager', () => {
     setDevPid(db, a, 8888)
     alivePids.add(8888)
     const mgr = new DevServerManager(db, rec.onChange, deps)
-    await resumeDevServers(db, mgr)
+    await mgr.resumeAll()
     expect(mgr.getState(a).status).toBe('live')
     expect(mgr.getState(b).status).toBe('none') // never touched
 
-    clearAllDevPids(db)
+    mgr.clearAllPids()
     expect(getDevPid(db, a)).toBeNull()
   })
 })

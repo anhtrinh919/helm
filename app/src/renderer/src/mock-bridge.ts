@@ -144,6 +144,10 @@ export function createMockBridge(): HelmApi {
     previewStates[projectId] = state
     previewListeners.forEach((cb) => cb({ projectId, state }))
   }
+  // Projects that have produced a runnable artifact (a real build session ran).
+  // startServer only has something to serve for these — mirrors the real
+  // `no_artifact` semantics so opening the tab on an unbuilt project stays calm.
+  const builtProjects = new Set<string>([projects[0]!.id])
   // The active demo project already has a running app to preview.
   previewStates[projects[0]!.id] = { status: 'live', url: DEMO_APP_URL }
 
@@ -340,6 +344,7 @@ export function createMockBridge(): HelmApi {
         sessionCard[sessionId] = c
         feeds[sessionId] = []
         questionsBySession[sessionId] = []
+        builtProjects.add(projectId) // a build is now producing a real artifact
         pushBoard(c)
         startScripted(sessionId, c)
         return { session }
@@ -438,6 +443,8 @@ export function createMockBridge(): HelmApi {
     preview: {
       getState: async (projectId) => ({ state: previewStates[projectId] ?? { status: 'none' } }),
       startServer: async (projectId) => {
+        // Nothing to serve until a build has produced an artifact.
+        if (!builtProjects.has(projectId)) return { error: 'no_artifact' }
         pushPreview(projectId, { status: 'live', url: DEMO_APP_URL })
         return { url: DEMO_APP_URL }
       },

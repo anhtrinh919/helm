@@ -40,11 +40,6 @@ export function failBuildStep(db: Db, buildStepId: string): BuildStep {
   return get(db, buildStepId)
 }
 
-export function snaggingBuildStep(db: Db, buildStepId: string): BuildStep {
-  db.prepare(`UPDATE build_steps SET status = 'snag' WHERE id = ?`).run(buildStepId)
-  return get(db, buildStepId)
-}
-
 export function getLatestBuildStep(db: Db, projectId: string): BuildStep | null {
   const row = db
     .prepare(`SELECT * FROM build_steps WHERE project_id = ? ORDER BY started_at DESC, rowid DESC LIMIT 1`)
