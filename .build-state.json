@@ -1,7 +1,7 @@
 {
   "phase": 2,
   "feature": "watch-it-get-made",
-  "step": "spec-complete",
+  "step": "frontend-complete",
   "reviewIteration": 0,
   "requirementsHash": "fded65164efcdb9d605ed5c224ccbe695b2f03ba0eaa25f381a8e381bf8b7c5b",
   "currentSubStep": null,

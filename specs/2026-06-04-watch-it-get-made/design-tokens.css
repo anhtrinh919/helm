@@ -1,0 +1,56 @@
+/* Helm — Design Tokens (Phase 2: Watch It Get Made)
+ * Source of truth: pencil/v0.2-p2.pen — "v4" (Maximalist) variable set.
+ * Generated from the .pen `variables` map (v4-* active layer) on 2026-06-04.
+ * The "v1-*" calm/Linear palette in the .pen is SUPERSEDED — do not use it.
+ * Phase 2 introduces NO new brand tokens; it reuses the Phase 1 system and
+ * adds only the Live-Preview surface tokens (stage surround + veil overlays)
+ * read directly from the F30–F35 frames.
+ * Do not edit by hand — regenerate if the design file changes.
+ */
+
+:root {
+  /* --- Surfaces (inherited v4) --- */
+  --bg:            #FFEFD2; /* warm canvas (app background) */
+  --surface:       #FFF7E6; /* cards / panels (cream) */
+  --ink:           #1B1208; /* primary text */
+  --text-soft:     #5C4A33; /* secondary / muted text */
+
+  /* --- Accents (semantic, scarce — inherited v4) --- */
+  --primary:       #6B4BEB; /* violet — primary CTA / brand */
+  --primary-soft:  #D9CFFF;
+  --accent-pink:   #FF6F91; /* needs-you / attention */
+  --accent-pink-soft:   #FFD4DE;
+  --accent-blue:   #3A6CFF; /* building / active */
+  --accent-blue-soft:   #CFE0FF;
+  --accent-lime:   #C8F23A; /* done / success (fill) */
+  --accent-lime-deep:   #6E8500; /* done text-on-light */
+  --accent-mint:   #7FD4B0; /* done / resolved (alt) */
+  --accent-orange: #FF7A29; /* snag / blocked / warning (used calm, never red) */
+  --accent-orange-soft: #FFD6B8;
+
+  /* --- Intended status mapping --- */
+  --status-building:  var(--accent-blue);
+  --status-done:      var(--accent-lime-deep);
+  --status-needs-you: var(--accent-pink);
+  --status-failed:    var(--accent-orange);
+
+  /* --- Live Preview surfaces (NEW — Phase 2, from F30–F35) --- */
+  --preview-stage:        #F7F2EA; /* neutral surround the embedded running app sits inside */
+  --preview-veil-strong:  #FFEFD2E0; /* cream veil over the app — heaviest (building) */
+  --preview-veil:         #FFEFD2D9; /* cream veil — standard overlay */
+  --preview-veil-light:   #FFEFD2CC; /* cream veil — lightest (app reads through) */
+  --window-dot-close:     #FF5F57; /* macOS window-chrome dot (running-app stage mock) */
+  --window-dot-min:       #FFBD2E;
+  --window-dot-max:       #28C940;
+  --shadow-soft:          #00000015; /* card/overlay elevation on cream */
+  --shadow-medium:        #00000022;
+
+  /* --- Type (inherited v4) --- */
+  --font-display: "Fraunces", Georgia, serif;             /* headings / editorial */
+  --font-ui:      "Space Grotesk", system-ui, sans-serif; /* UI / body */
+  --font-mono:    "JetBrains Mono", ui-monospace, monospace; /* literals — NOT used in Live Preview copy */
+
+  /* --- Canvas --- */
+  --window-w: 1440px;
+  --window-h: 900px; /* design reference frame; app is resizable */
+}
