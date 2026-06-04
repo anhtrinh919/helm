@@ -1,0 +1,42 @@
+/* Helm — Design Tokens (Phase 1)
+ * Source of truth: pencil/v0.1.pen — "v4" (Maximalist) variable set.
+ * The "v1-*" calm/Linear palette in the .pen is SUPERSEDED — do not use it.
+ * Exact per-element color bindings should be read from the matching F-frame
+ * in v0.1.pen during build; the semantic layer below is the intended mapping.
+ */
+
+:root {
+  /* --- Surfaces --- */
+  --bg:            #FFEFD2; /* warm canvas (app background) */
+  --surface:       #FFF7E6; /* cards / panels (cream) */
+  --ink:           #1B1208; /* primary text */
+  --text-soft:     #5C4A33; /* secondary / muted text */
+
+  /* --- Accents (semantic, scarce) --- */
+  --primary:       #6B4BEB; /* violet — primary CTA / brand */
+  --primary-soft:  #D9CFFF;
+  --accent-pink:   #FF6F91; /* needs-you / attention */
+  --accent-pink-soft:   #FFD4DE;
+  --accent-blue:   #3A6CFF; /* building / active */
+  --accent-blue-soft:   #CFE0FF;
+  --accent-lime:   #C8F23A; /* done / success (fill) */
+  --accent-lime-deep:   #6E8500; /* done text-on-light */
+  --accent-mint:   #7FD4B0; /* done / resolved (alt) */
+  --accent-orange: #FF7A29; /* failed / off-track / warning */
+  --accent-orange-soft: #FFD6B8;
+
+  /* --- Intended status mapping (build reads exact usage from the F-frames) --- */
+  --status-building:  var(--accent-blue);
+  --status-done:      var(--accent-lime-deep);
+  --status-needs-you: var(--accent-pink);
+  --status-failed:    var(--accent-orange);
+
+  /* --- Type --- */
+  --font-display: "Fraunces", Georgia, serif;        /* headings / editorial */
+  --font-ui:      "Space Grotesk", system-ui, sans-serif; /* UI / body */
+  --font-mono:    "JetBrains Mono", ui-monospace, monospace; /* literals (URLs, codes) */
+
+  /* --- Canvas --- */
+  --window-w: 1440px;
+  --window-h: 900px; /* design reference frame; app is resizable */
+}
