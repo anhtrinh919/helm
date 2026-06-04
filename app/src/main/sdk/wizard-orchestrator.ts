@@ -5,6 +5,7 @@ import type { DecisionPrompt, PlanBlock } from '../../shared/ipc-schemas'
 import type { Db } from '../db/connection'
 import { createSession, updateSessionStatus } from '../db/sessions'
 import { transform } from './event-transformer'
+import { extractJson } from './json-extract'
 import {
   startSession,
   type SessionCallbacks,
@@ -41,37 +42,8 @@ function scopingPrompt(idea: string): string {
   ].join(' ')
 }
 
-/** Pull the first balanced {...} object out of a model turn, tolerating fences/prose. */
-export function extractJson(text: string): unknown | null {
-  const cleaned = text.replace(/```[a-z]*/gi, '').replace(/```/g, '')
-  const start = cleaned.indexOf('{')
-  if (start < 0) return null
-  let depth = 0
-  let inStr = false
-  let esc = false
-  for (let i = start; i < cleaned.length; i++) {
-    const ch = cleaned[i]
-    if (inStr) {
-      if (esc) esc = false
-      else if (ch === '\\') esc = true
-      else if (ch === '"') inStr = false
-      continue
-    }
-    if (ch === '"') inStr = true
-    else if (ch === '{') depth++
-    else if (ch === '}') {
-      depth--
-      if (depth === 0) {
-        try {
-          return JSON.parse(cleaned.slice(start, i + 1))
-        } catch {
-          return null
-        }
-      }
-    }
-  }
-  return null
-}
+// extractJson lives in ./json-extract (shared with the build-session transformer).
+export { extractJson }
 
 /** Classify a parsed object as a scoping question or a finished plan. */
 export function classifyScoping(obj: unknown): ScopingReply | null {

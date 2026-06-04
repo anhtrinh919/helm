@@ -76,6 +76,19 @@ describe('SessionOrchestrator', () => {
     ])
   })
 
+  it('a genuine-decision marker from the engine pauses the build and queues a question', () => {
+    const { fr, orch, projectId, cardId } = setup()
+    const session = orch.start(projectId, cardId)
+    fr.cb().onMessage(assistantText('{"decision":{"question":"Should sign-in use a password or a magic link?"}}'))
+
+    expect(getSession(db, session.id).status).toBe('paused_for_decision')
+    expect(getCard(db, cardId).status).toBe('needs_you')
+    const q = getEvents(db, session.id).find((e) => e.kind === 'decision_prompt')
+    expect(q?.text).toBe('Should sign-in use a password or a magic link?')
+    // the raw JSON never leaks as narration
+    expect(getEvents(db, session.id).some((e) => e.kind === 'narration' && e.text.includes('{'))).toBe(false)
+  })
+
   it('suppresses the raw "Done." summary in favor of the checkpoint', () => {
     const { fr, orch, projectId, cardId } = setup()
     const session = orch.start(projectId, cardId)

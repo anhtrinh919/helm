@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { FeedEvent, FeedEventKind } from '../../shared/ipc-schemas'
+import { extractJson } from './json-extract'
 
 /**
  * Converts raw SDK messages into user-safe FeedEvents. This is a HARD GATE:
@@ -39,6 +40,23 @@ function mk(sessionId: string, kind: FeedEventKind, text: string, refId: string 
   return { id: randomUUID(), sessionId, kind, text, refId, createdAt: Date.now() }
 }
 
+/**
+ * Smart-pausing: the build prompt tells the engine to emit a single
+ * {"decision":{"question":"..."}} object only when it hits a genuine fork a
+ * non-developer would care about (routine choices it just makes silently). If a
+ * text block carries that marker, we surface it as a decision (which pauses the
+ * build) instead of narrating raw JSON. Returns the question, or null.
+ */
+function decisionQuestion(text: string): string | null {
+  if (!text.includes('"decision"')) return null
+  const obj = extractJson(text)
+  if (!obj || typeof obj !== 'object') return null
+  const d = (obj as Record<string, unknown>).decision
+  if (!d || typeof d !== 'object') return null
+  const q = (d as Record<string, unknown>).question
+  return typeof q === 'string' && q.trim() ? q.trim() : null
+}
+
 type Block = { type: string; text?: string; name?: string }
 
 /** Transform one SDK message into zero or more user-safe feed events. */
@@ -50,7 +68,9 @@ export function transform(sessionId: string, msg: SDKMessage): FeedEvent[] {
       if (Array.isArray(content)) {
         for (const raw of content as Block[]) {
           if (raw.type === 'text' && typeof raw.text === 'string' && raw.text.trim()) {
-            out.push(mk(sessionId, 'narration', raw.text.trim()))
+            const question = decisionQuestion(raw.text)
+            if (question) out.push(mk(sessionId, 'decision_prompt', question))
+            else out.push(mk(sessionId, 'narration', raw.text.trim()))
           } else if (raw.type === 'tool_use') {
             out.push(mk(sessionId, 'activity', TOOL_LABELS[raw.name ?? ''] ?? 'Working on it'))
           }
