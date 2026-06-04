@@ -38,6 +38,7 @@ export function createMockBridge(): HelmApi {
     plan: null,
     status,
     backgroundStatus,
+    artifactDir: null,
   })
 
   const projects: Project[] = [
