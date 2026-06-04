@@ -7,6 +7,7 @@ import { registerFeedBridge } from './ipc/feed-bridge'
 import { registerDataBridge } from './ipc/data-bridge'
 import { registerSessionBridge } from './ipc/session-bridge'
 import { registerWizardBridge } from './ipc/wizard-bridge'
+import { registerPreviewBridge } from './ipc/preview-bridge'
 import { SessionOrchestrator } from './sdk/session-orchestrator'
 import { DevServerManager } from './sdk/dev-server-manager'
 import { WizardOrchestrator } from './sdk/wizard-orchestrator'
@@ -61,6 +62,7 @@ void app.whenReady().then(() => {
   registerDataBridge(db, getWindow)
   registerSessionBridge(db, orchestrator)
   registerWizardBridge(db, wizard, getWindow)
+  registerPreviewBridge(db, devServer)
 
   createWindow()
   app.on('activate', () => {

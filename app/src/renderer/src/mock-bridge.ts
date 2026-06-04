@@ -6,6 +6,8 @@ import type {
   Card,
   FeedEvent,
   FeedEventPush,
+  PreviewState,
+  PreviewUpdatePush,
   Project,
   ProjectStatus,
   QuestionQueueItem,
@@ -118,6 +120,32 @@ export function createMockBridge(): HelmApi {
   const boardListeners = new Set<(p: BoardUpdatePush) => void>()
   const bgListeners = new Set<(p: BackgroundStatusPush) => void>()
   const questionListeners = new Set<(p: QuestionUpdatePush) => void>()
+  const previewListeners = new Set<(p: PreviewUpdatePush) => void>()
+
+  // Live Preview simulation. In a plain browser there is no real dev server, so
+  // the "live" state points the embed at a tiny inline demo app so the preview
+  // states (none → building → live → snag → blocked) can be dogfooded.
+  const previewStates: Record<string, PreviewState> = {}
+  const DEMO_APP_URL =
+    'data:text/html,' +
+    encodeURIComponent(
+      `<!doctype html><meta charset=utf8><style>body{margin:0;font:16px/1.5 system-ui;background:#fff;color:#1b1208}` +
+        `header{padding:18px 22px;border-bottom:2px solid #1b1208;font-weight:800}` +
+        `.row{display:flex;gap:14px;padding:18px 22px}` +
+        `.t{flex:1;border:2px solid #1b1208;border-radius:12px;padding:14px;background:#fff7e6}` +
+        `.t b{display:block;margin-bottom:6px}button{font:inherit;font-weight:700;border:2px solid #1b1208;` +
+        `border-radius:999px;background:#c8f23a;padding:8px 14px;cursor:pointer}</style>` +
+        `<header>Order Up — kitchen ticket board</header><div class=row>` +
+        `<div class=t><b>Table 4 · burger, fries</b><button onclick="this.textContent='Ready ✓'">Mark ready</button></div>` +
+        `<div class=t><b>Table 7 · salad</b><button onclick="this.textContent='Ready ✓'">Mark ready</button></div></div>`,
+    )
+
+  const pushPreview = (projectId: string, state: PreviewState): void => {
+    previewStates[projectId] = state
+    previewListeners.forEach((cb) => cb({ projectId, state }))
+  }
+  // The active demo project already has a running app to preview.
+  previewStates[projects[0]!.id] = { status: 'live', url: DEMO_APP_URL }
 
   const emitFeed = (
     sessionId: string,
@@ -149,11 +177,15 @@ export function createMockBridge(): HelmApi {
       c.status = 'building'
       c.checkpoint = { status: 'pending' }
       pushBoard(c)
+      // The build produced a runnable version — the preview goes live.
+      pushPreview(c.projectId, { status: 'live', url: DEMO_APP_URL })
       emitFeed(sessionId, 'checkpoint', 'Here’s what I built — does this look right?', c.id)
     }, 1700)
   }
 
   const startScripted = (sessionId: string, c: Card): void => {
+    // A real build session is in flight — the preview shows the building veil.
+    pushPreview(c.projectId, { status: 'building' })
     const lines: [number, FeedEvent['kind'], string][] = [
       [500, 'narration', 'Reading the project plan.'],
       [1100, 'narration', 'Starting work on the sign-in form.'],
@@ -403,6 +435,17 @@ export function createMockBridge(): HelmApi {
         return { project, cards: seeded }
       },
     },
+    preview: {
+      getState: async (projectId) => ({ state: previewStates[projectId] ?? { status: 'none' } }),
+      startServer: async (projectId) => {
+        pushPreview(projectId, { status: 'live', url: DEMO_APP_URL })
+        return { url: DEMO_APP_URL }
+      },
+      stopServer: async (projectId) => {
+        pushPreview(projectId, { status: 'none' })
+        return { stopped: true as const }
+      },
+    },
     events: {
       onBoardUpdate: (cb) => {
         boardListeners.add(cb)
@@ -419,6 +462,10 @@ export function createMockBridge(): HelmApi {
       onQuestionUpdate: (cb) => {
         questionListeners.add(cb)
         return () => questionListeners.delete(cb)
+      },
+      onPreviewUpdate: (cb) => {
+        previewListeners.add(cb)
+        return () => previewListeners.delete(cb)
       },
     },
     startProbe: async () => ({ sessionId: uid() }),
