@@ -135,9 +135,9 @@ export function createMockBridge(): HelmApi {
         `.t{flex:1;border:2px solid #1b1208;border-radius:12px;padding:14px;background:#fff7e6}` +
         `.t b{display:block;margin-bottom:6px}button{font:inherit;font-weight:700;border:2px solid #1b1208;` +
         `border-radius:999px;background:#c8f23a;padding:8px 14px;cursor:pointer}</style>` +
-        `<header>Order Up — kitchen ticket board</header><div class=row>` +
-        `<div class=t><b>Table 4 · burger, fries</b><button onclick="this.textContent='Ready ✓'">Mark ready</button></div>` +
-        `<div class=t><b>Table 7 · salad</b><button onclick="this.textContent='Ready ✓'">Mark ready</button></div></div>`,
+        `<header>Customer feedback portal — inbox</header><div class=row>` +
+        `<div class=t><b>“Love the new dashboard, but export is slow”</b><button onclick="this.textContent='Replied ✓'">Reply</button></div>` +
+        `<div class=t><b>“Can we get dark mode?”</b><button onclick="this.textContent='Replied ✓'">Reply</button></div></div>`,
     )
 
   const pushPreview = (projectId: string, state: PreviewState): void => {
