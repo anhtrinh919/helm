@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { app, BrowserWindow } from 'electron'
+import { CH, type PreviewState } from '../shared/ipc-schemas'
 import { openDatabase, type Db } from './db/connection'
 import { recoverActiveSessions } from './db/sessions'
 import { registerFeedBridge } from './ipc/feed-bridge'
@@ -7,6 +8,7 @@ import { registerDataBridge } from './ipc/data-bridge'
 import { registerSessionBridge } from './ipc/session-bridge'
 import { registerWizardBridge } from './ipc/wizard-bridge'
 import { SessionOrchestrator } from './sdk/session-orchestrator'
+import { DevServerManager } from './sdk/dev-server-manager'
 import { WizardOrchestrator } from './sdk/wizard-orchestrator'
 
 let mainWindow: BrowserWindow | null = null
@@ -39,7 +41,21 @@ void app.whenReady().then(() => {
   recoverActiveSessions(db, Date.now())
 
   const getWindow = (): BrowserWindow | null => mainWindow
-  const orchestrator = new SessionOrchestrator(db, getWindow)
+  const send = (channel: string, payload: unknown): void => {
+    const win = getWindow()
+    if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
+  }
+
+  // The dev server feeds the Live Preview: every state change is pushed to the
+  // renderer. Each project's app lives under userData/projects/<id> (hidden).
+  const devServer = new DevServerManager(
+    db,
+    (projectId: string, state: PreviewState) => send(CH.previewUpdate, { projectId, state }),
+    undefined,
+    join(app.getPath('userData'), 'projects'),
+  )
+
+  const orchestrator = new SessionOrchestrator(db, getWindow, undefined, devServer)
   const wizard = new WizardOrchestrator(db)
   registerFeedBridge(db, getWindow)
   registerDataBridge(db, getWindow)

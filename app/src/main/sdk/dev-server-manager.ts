@@ -1,11 +1,12 @@
 import { spawn } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { get as httpGet } from 'node:http'
 import { z } from 'zod'
 import type { PreviewState } from '../../shared/ipc-schemas'
 import type { Db } from '../db/connection'
-import { getArtifactDir, setDevPid } from '../db/projects'
+import { getArtifactDir, setArtifactDir, setDevPid } from '../db/projects'
 import { AlreadyRunningError, NoArtifactError, StartFailedError } from '../db/errors'
 
 /**
@@ -121,7 +122,23 @@ export class DevServerManager {
     private db: Db,
     private onStateChange: OnStateChange,
     private deps: DevServerDeps = defaultDeps(),
+    /** Base dir under which each project's working directory is created. */
+    private artifactRoot: string = join(tmpdir(), 'helm-projects'),
   ) {}
+
+  /**
+   * Resolve (creating + persisting on first use) the project's working dir.
+   * This is the only place a project's on-disk path is decided. The path is
+   * internal — it is never surfaced to the user.
+   */
+  ensureArtifactDir(projectId: string): string {
+    const existing = getArtifactDir(this.db, projectId)
+    if (existing) return existing
+    const dir = join(this.artifactRoot, projectId)
+    mkdirSync(dir, { recursive: true })
+    setArtifactDir(this.db, projectId, dir)
+    return dir
+  }
 
   private setState(projectId: string, state: PreviewState): void {
     this.states.set(projectId, state)

@@ -6,8 +6,18 @@ import { createCard, getCard } from '../../db/cards'
 import { getSession } from '../../db/sessions'
 import { getEvents } from '../../db/feed-events'
 import { createQuestion, listQuestions } from '../../db/question-queue'
+import { getLatestBuildStep } from '../../db/build-steps'
+import { getArtifactDir } from '../../db/projects'
 import { SessionOrchestrator } from '../session-orchestrator'
+import {
+  DevServerManager,
+  type DevServerDeps,
+  type SpawnedServer,
+} from '../dev-server-manager'
 import type { SessionCallbacks, SessionHandle, StartSessionOptions } from '../session-runner'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 /** A runner stand-in: captures the orchestrator's callbacks so the test drives them. */
 function fakeRunner(): {
@@ -223,5 +233,105 @@ describe('SessionOrchestrator', () => {
     const session = orch.start(projectId, cardId)
     const q = createQuestion(db, session.id, { type: 'freetext', question: 'Pending?' }, 0)
     expect(() => orch.reopen(session.id, q.id)).toThrow()
+  })
+})
+
+/* ---- Phase 2: real-pipeline path (DevServerManager injected) ---- */
+
+/** A runner that captures the options it was started with (cwd, tools, mode). */
+function capturingRunner(): {
+  runner: Runner
+  cb: () => SessionCallbacks
+  lastOpts: () => StartSessionOptions
+} {
+  let captured: SessionCallbacks | null = null
+  let opts: StartSessionOptions | null = null
+  const runner = (o: StartSessionOptions, cb: SessionCallbacks): SessionHandle => {
+    opts = o
+    captured = cb
+    return { id: 'fake', steer: async () => {}, reply: () => {}, close: async () => {} }
+  }
+  return { runner, cb: () => captured!, lastOpts: () => opts! }
+}
+type Runner = (o: StartSessionOptions, cb: SessionCallbacks) => SessionHandle
+
+function fakeDevServerDeps(): DevServerDeps {
+  return {
+    readManifest: () => ({ startCommand: 'npm run dev', port: 3000 }),
+    spawnServer: (_cwd, manifest): SpawnedServer => ({
+      pid: 4242,
+      url: `http://localhost:${manifest.port}`,
+      kill: () => {},
+      onExit: () => {},
+    }),
+    probe: async () => true,
+    pidAlive: () => true,
+  }
+}
+
+describe('SessionOrchestrator — real pipeline', () => {
+  function setupReal() {
+    const fr = capturingRunner()
+    const states: string[] = []
+    const root = mkdtempSync(join(tmpdir(), 'helm-test-'))
+    const devServer = new DevServerManager(db, (_p, s) => states.push(s.status), fakeDevServerDeps(), root)
+    const orch = new SessionOrchestrator(db, () => null, fr.runner, devServer)
+    const project = createProject(db, 'P')
+    const card = createCard(db, project.id, 'feature', 'Sign-in')
+    return { fr, orch, devServer, states, projectId: project.id, cardId: card.id }
+  }
+
+  it('real start: creates a working dir + build step, runs with full tools, marks preview building', () => {
+    const { fr, orch, states, projectId, cardId } = setupReal()
+    orch.start(projectId, cardId)
+    // a real working directory was created and persisted
+    expect(getArtifactDir(db, projectId)).not.toBeNull()
+    // the session ran with a real cwd + ALL tools (allowedTools omitted) + write permission
+    const opts = fr.lastOpts()
+    expect(opts.cwd).toBe(getArtifactDir(db, projectId))
+    expect(opts.allowedTools).toBeUndefined()
+    expect(opts.permissionMode).toBe('bypassPermissions')
+    // the build prompt instructs the agent to produce a helm.json manifest
+    expect(opts.prompt).toContain('helm.json')
+    // a build step is recorded and the preview is building
+    expect(getLatestBuildStep(db, projectId)?.status).toBe('running')
+    expect(states.at(-1)).toBe('building')
+  })
+
+  it('real finish: completes the build step, brings the dev server live, THEN checkpoints', async () => {
+    const { fr, orch, states, projectId, cardId } = setupReal()
+    const session = orch.start(projectId, cardId)
+    fr.cb().onClose()
+    // restart() is async; let it resolve
+    await new Promise((r) => setTimeout(r, 0))
+    expect(getLatestBuildStep(db, projectId)?.status).toBe('complete')
+    expect(getLatestBuildStep(db, projectId)?.devUrl).toBe('http://localhost:3000')
+    expect(states.at(-1)).toBe('live')
+    // checkpoint only after live
+    expect(getCard(db, cardId).checkpoint?.status).toBe('pending')
+    expect(getEvents(db, session.id).some((e) => e.kind === 'checkpoint')).toBe(true)
+  })
+
+  it('real fail: marks the build step failed and routes the preview through a crash', async () => {
+    const { fr, orch, states, projectId, cardId } = setupReal()
+    orch.start(projectId, cardId)
+    fr.cb().onError('the build broke')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(getLatestBuildStep(db, projectId)?.status).toBe('failed')
+    expect(getCard(db, cardId).status).toBe('failed')
+    // handleCrash drove a snag (and recovered to live, since the fake server starts fine)
+    expect(states).toContain('snag')
+  })
+
+  it('without a DevServerManager the path stays narration-only (no build steps, sandboxed)', () => {
+    const fr = capturingRunner()
+    const orch = new SessionOrchestrator(db, () => null, fr.runner) // no devServer
+    const project = createProject(db, 'P2')
+    const card = createCard(db, project.id, 'feature', 'X')
+    orch.start(project.id, card.id)
+    expect(getArtifactDir(db, project.id)).toBeNull()
+    expect(getLatestBuildStep(db, project.id)).toBeNull()
+    expect(fr.lastOpts().allowedTools).toEqual([])
+    expect(fr.lastOpts().permissionMode).toBe('default')
   })
 })
