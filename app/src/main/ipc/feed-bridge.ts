@@ -10,26 +10,29 @@ import { CH, StartProbeRequest, GetFeedRequest, type FeedEvent } from '../../sha
  * user-safe FeedEvents cross to the renderer.
  */
 
+type GetWindow = () => BrowserWindow | null
+
 const feeds = new Map<string, FeedEvent[]>()
 
-function record(win: BrowserWindow, sessionId: string, ev: FeedEvent): void {
+function record(getWindow: GetWindow, sessionId: string, ev: FeedEvent): void {
   const list = feeds.get(sessionId) ?? []
   list.push(ev)
   feeds.set(sessionId, list)
-  if (!win.isDestroyed()) win.webContents.send(CH.feedEvent, { sessionId, event: ev })
+  const win = getWindow()
+  if (win && !win.isDestroyed()) win.webContents.send(CH.feedEvent, { sessionId, event: ev })
 }
 
-export function registerFeedBridge(win: BrowserWindow): void {
+export function registerFeedBridge(getWindow: GetWindow): void {
   ipcMain.handle(CH.startProbe, (_e, raw: unknown) => {
     const { prompt } = StartProbeRequest.parse(raw)
     const handle = startSession(
       { prompt, allowedTools: [] }, // Group 1 probe is text-only — no execution
       {
         onMessage: (msg) => {
-          for (const ev of transform(handle.id, msg)) record(win, handle.id, ev)
+          for (const ev of transform(handle.id, msg)) record(getWindow, handle.id, ev)
         },
         onError: (message) => {
-          record(win, handle.id, {
+          record(getWindow, handle.id, {
             id: randomUUID(),
             sessionId: handle.id,
             kind: 'error',
