@@ -1,13 +1,9 @@
 /// <reference types="vite/client" />
-import type { StartProbeResponse, GetFeedResponse, FeedEventPush } from '../../shared/ipc-schemas'
+import type { HelmApi } from '../../shared/bridge-api'
 
 declare global {
   interface Window {
-    helm: {
-      startProbe(prompt: string): Promise<StartProbeResponse>
-      getFeed(sessionId: string): Promise<GetFeedResponse>
-      onFeedEvent(cb: (push: FeedEventPush) => void): () => void
-    }
+    helm?: HelmApi
   }
 }
 
