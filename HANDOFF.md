@@ -114,8 +114,9 @@ mutate state in place.
 ## Repo state
 
 - Branch `phase-2-watch-it-get-made`, **18 commits ahead of `main`**.
-- **No git remote configured** — everything is local. `git push` is skipped in the
-  dogfood handoff until someone runs `git remote add origin <url>`.
+- Remote `origin` → **https://github.com/anhtrinh919/helm** (public). Both `main`
+  and the feature branch are pushed and tracking. The dogfood handoff now pushes
+  to origin before printing the URL.
 - `specs/2026-06-04-watch-it-get-made/` holds requirements / plan / validation —
   `requirements.md` is the contract. Design lives in `pencil/v0.2-p2.pen`
   (frames F30–F35 cover the six preview states).
