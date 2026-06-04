@@ -41,7 +41,7 @@ void app.whenReady().then(() => {
   const getWindow = (): BrowserWindow | null => mainWindow
   const orchestrator = new SessionOrchestrator(db, getWindow)
   const wizard = new WizardOrchestrator(db)
-  registerFeedBridge(getWindow)
+  registerFeedBridge(db, getWindow)
   registerDataBridge(db, getWindow)
   registerSessionBridge(db, orchestrator)
   registerWizardBridge(db, wizard, getWindow)

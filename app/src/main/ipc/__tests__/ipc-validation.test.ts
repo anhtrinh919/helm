@@ -58,7 +58,7 @@ beforeEach(() => {
   db = openDatabase(':memory:')
   const sessionOrch = new SessionOrchestrator(db, () => null, fakeRunner)
   const wizardOrch = new WizardOrchestrator(db, fakeRunner)
-  registerFeedBridge(() => null)
+  registerFeedBridge(db, () => null)
   registerDataBridge(db, () => null)
   registerSessionBridge(db, sessionOrch)
   registerWizardBridge(db, wizardOrch, () => null)

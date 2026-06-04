@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import type { BrowserWindow } from 'electron'
 import type { Card, FeedEvent, Session, SteerMode } from '../../shared/ipc-schemas'
@@ -6,11 +5,13 @@ import { CH } from '../../shared/ipc-schemas'
 import type { Db } from '../db/connection'
 import { deriveBackgroundStatus } from '../db/projects'
 import {
+  findBuildingCard,
   getCard,
   setCardSession,
   setPendingCheckpoint,
   updateCardStatus,
 } from '../db/cards'
+import { NotAwaitingDecisionError, SpotlightOccupiedError } from '../db/errors'
 import {
   createSession,
   getSession,
@@ -19,7 +20,7 @@ import {
 import { appendEvent } from '../db/feed-events'
 import { answerQuestion, createQuestion, nextPosition, reopenQuestion } from '../db/question-queue'
 import type { QuestionQueueItem } from '../../shared/ipc-schemas'
-import { transform } from './event-transformer'
+import { makeFeedEvent, transform } from './event-transformer'
 import {
   startSession,
   type SessionCallbacks,
@@ -53,18 +54,9 @@ export class SessionOrchestrator {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
   }
 
-  private emit(ev: FeedEvent): void {
-    appendEvent(this.db, ev)
+  private emit(ev: FeedEvent, rawPayload?: string | null): void {
+    appendEvent(this.db, ev, rawPayload)
     this.send(CH.feedEvent, { sessionId: ev.sessionId, event: ev })
-  }
-
-  private mkEvent(
-    sessionId: string,
-    kind: FeedEvent['kind'],
-    text: string,
-    refId: string | null = null,
-  ): FeedEvent {
-    return { id: randomUUID(), sessionId, kind, text, refId, createdAt: Date.now() }
   }
 
   private pushBoard(card: Card): void {
@@ -96,6 +88,12 @@ export class SessionOrchestrator {
   /** Open a scoped session for a card and start the live build. */
   start(projectId: string, cardId: string): Session {
     const card = getCard(this.db, cardId)
+    // Phase 1 hard invariant: one Building spotlight per project at a time.
+    const occupied = findBuildingCard(this.db, projectId)
+    if (occupied && occupied.id !== cardId) {
+      throw new SpotlightOccupiedError(occupied.sessionId ?? '')
+    }
+
     const session = createSession(this.db, projectId, cardId, card.stepLabel ?? card.title)
     setCardSession(this.db, cardId, session.id)
 
@@ -114,8 +112,9 @@ export class SessionOrchestrator {
       { prompt: this.buildPrompt(card), cwd: tmpdir(), permissionMode: 'default', allowedTools: [] },
       {
         onMessage: (msg) => {
+          const raw = JSON.stringify(msg)
           for (const ev of transform(session.id, msg)) {
-            this.ingest(session.id, projectId, cardId, ev)
+            this.ingest(session.id, projectId, cardId, ev, raw)
           }
         },
         onError: (message) => this.fail(session.id, projectId, cardId, message),
@@ -126,14 +125,20 @@ export class SessionOrchestrator {
     return session
   }
 
-  private ingest(sessionId: string, projectId: string, cardId: string, ev: FeedEvent): void {
+  private ingest(
+    sessionId: string,
+    projectId: string,
+    cardId: string,
+    ev: FeedEvent,
+    rawPayload?: string | null,
+  ): void {
     // 'summary' ("Done.") is superseded by the reviewable checkpoint we emit on finish.
     if (ev.kind === 'summary') return
     if (ev.kind === 'decision_prompt') {
       this.pause(sessionId, projectId, cardId, ev.text)
       return
     }
-    this.emit(ev)
+    this.emit(ev, rawPayload)
   }
 
   /** The engine asked for a genuine decision: queue it and pause the build. */
@@ -144,7 +149,7 @@ export class SessionOrchestrator {
       { type: 'freetext', question },
       nextPosition(this.db, sessionId),
     )
-    this.emit(this.mkEvent(sessionId, 'decision_prompt', question, q.id))
+    this.emit(makeFeedEvent(sessionId, 'decision_prompt', question, q.id))
     this.send(CH.questionUpdate, { sessionId, question: q })
     updateSessionStatus(this.db, sessionId, 'paused_for_decision')
     try {
@@ -159,16 +164,19 @@ export class SessionOrchestrator {
   steer(sessionId: string, mode: SteerMode, text: string): boolean {
     const handle = this.handles.get(sessionId)
     if (!handle) return false
-    this.emit(this.mkEvent(sessionId, 'steering', steeringLabel(mode, text)))
+    this.emit(makeFeedEvent(sessionId, 'steering', steeringLabel(mode, text)))
     void handle.steer(mode, text)
     return true
   }
 
   /** Answer a pending decision: record it, resume the session, un-block the card. */
   answerDecision(sessionId: string, questionId: string, answer: string): void {
+    if (getSession(this.db, sessionId).status !== 'paused_for_decision') {
+      throw new NotAwaitingDecisionError('session is not waiting on a decision')
+    }
     const question = answerQuestion(this.db, questionId, answer)
     this.send(CH.questionUpdate, { sessionId, question })
-    this.emit(this.mkEvent(sessionId, 'narration', `You answered: ${answer}`))
+    this.emit(makeFeedEvent(sessionId, 'narration', `You answered: ${answer}`))
 
     const session = getSession(this.db, sessionId)
     if (session.cardId) {
@@ -190,7 +198,7 @@ export class SessionOrchestrator {
     const question = reopenQuestion(this.db, questionId) // throws if still pending
     this.send(CH.questionUpdate, { sessionId, question })
     this.emit(
-      this.mkEvent(
+      makeFeedEvent(
         sessionId,
         'narration',
         'You re-opened a question — I’ll wait for your updated answer.',
@@ -220,7 +228,7 @@ export class SessionOrchestrator {
     const card = setPendingCheckpoint(this.db, cardId)
     this.pushBoard(card)
     this.emit(
-      this.mkEvent(sessionId, 'checkpoint', 'Here’s what I built — does this look right?', cardId),
+      makeFeedEvent(sessionId, 'checkpoint', 'Here’s what I built — does this look right?', cardId),
     )
     this.pushBackground(projectId)
   }
@@ -231,7 +239,7 @@ export class SessionOrchestrator {
     this.handles.delete(sessionId)
 
     updateSessionStatus(this.db, sessionId, 'error')
-    this.emit(this.mkEvent(sessionId, 'error', message))
+    this.emit(makeFeedEvent(sessionId, 'error', message))
     try {
       this.pushBoard(updateCardStatus(this.db, cardId, 'failed'))
     } catch {

@@ -128,6 +128,14 @@ export function setPendingCheckpoint(db: Db, id: string, screenshotPath?: string
   return getCard(db, id)
 }
 
+/** The card currently in the Building spotlight for a project, if any (Phase 1: at most one). */
+export function findBuildingCard(db: Db, projectId: string): Card | null {
+  const row = db
+    .prepare(`SELECT * FROM cards WHERE project_id = ? AND status = 'building' LIMIT 1`)
+    .get(projectId) as CardRow | undefined
+  return row ? toCard(row) : null
+}
+
 /** Promote the lowest-position planned card to up_next (used after a card completes). */
 export function promoteNextPlanned(db: Db, projectId: string): Card | null {
   const row = db

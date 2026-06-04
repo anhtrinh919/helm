@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { FeedEvent, FeedEventKind } from '../../shared/ipc-schemas'
-import { extractJson } from './json-extract'
+import { splitJson } from './json-extract'
 
 /**
  * Converts raw SDK messages into user-safe FeedEvents. This is a HARD GATE:
@@ -32,29 +32,51 @@ const ERROR_TEXT: Record<string, string> = {
   model_not_found: 'The build engine couldn’t start (model unavailable).',
 }
 
-function friendlyError(code: string): string {
-  return ERROR_TEXT[code] ?? 'Something went wrong while building this — let’s try again.'
+function friendlyError(code: string | undefined): string {
+  return (code && ERROR_TEXT[code]) || 'Something went wrong while building this — let’s try again.'
 }
 
-function mk(sessionId: string, kind: FeedEventKind, text: string, refId: string | null = null): FeedEvent {
+/** The one place a renderer-facing FeedEvent is constructed. */
+export function makeFeedEvent(
+  sessionId: string,
+  kind: FeedEventKind,
+  text: string,
+  refId: string | null = null,
+): FeedEvent {
   return { id: randomUUID(), sessionId, kind, text, refId, createdAt: Date.now() }
+}
+
+/** Concatenate the plain text blocks of an assistant message — no hard-gate semantics.
+ *  Used by the wizard, which parses the model's own JSON reply and needs it intact. */
+export function assistantText(msg: SDKMessage): string {
+  if (msg.type !== 'assistant') return ''
+  const content = (msg.message as { content?: unknown } | undefined)?.content
+  if (!Array.isArray(content)) return ''
+  return (content as Block[])
+    .filter((b) => b.type === 'text' && typeof b.text === 'string')
+    .map((b) => b.text as string)
+    .join('\n')
 }
 
 /**
  * Smart-pausing: the build prompt tells the engine to emit a single
  * {"decision":{"question":"..."}} object only when it hits a genuine fork a
- * non-developer would care about (routine choices it just makes silently). If a
- * text block carries that marker, we surface it as a decision (which pauses the
- * build) instead of narrating raw JSON. Returns the question, or null.
+ * non-developer would care about. We split the turn into prose (narrated) and
+ * JSON objects (never narrated): a decision object surfaces a decision_prompt
+ * (which pauses the build); any other JSON is dropped so raw braces can't leak.
  */
-function decisionQuestion(text: string): string | null {
-  if (!text.includes('"decision"')) return null
-  const obj = extractJson(text)
-  if (!obj || typeof obj !== 'object') return null
-  const d = (obj as Record<string, unknown>).decision
-  if (!d || typeof d !== 'object') return null
-  const q = (d as Record<string, unknown>).question
-  return typeof q === 'string' && q.trim() ? q.trim() : null
+function splitTurn(text: string): { narration: string | null; question: string | null } {
+  const { prose, objects } = splitJson(text)
+  let question: string | null = null
+  for (const obj of objects) {
+    if (!obj || typeof obj !== 'object') continue
+    const d = (obj as Record<string, unknown>).decision
+    if (d && typeof d === 'object') {
+      const q = (d as Record<string, unknown>).question
+      if (typeof q === 'string' && q.trim() && !question) question = q.trim()
+    }
+  }
+  return { narration: prose ? prose : null, question }
 }
 
 type Block = { type: string; text?: string; name?: string }
@@ -68,22 +90,21 @@ export function transform(sessionId: string, msg: SDKMessage): FeedEvent[] {
       if (Array.isArray(content)) {
         for (const raw of content as Block[]) {
           if (raw.type === 'text' && typeof raw.text === 'string' && raw.text.trim()) {
-            const question = decisionQuestion(raw.text)
-            if (question) out.push(mk(sessionId, 'decision_prompt', question))
-            else out.push(mk(sessionId, 'narration', raw.text.trim()))
+            const { narration, question } = splitTurn(raw.text)
+            if (narration) out.push(makeFeedEvent(sessionId, 'narration', narration))
+            if (question) out.push(makeFeedEvent(sessionId, 'decision_prompt', question))
           } else if (raw.type === 'tool_use') {
-            out.push(mk(sessionId, 'activity', TOOL_LABELS[raw.name ?? ''] ?? 'Working on it'))
+            out.push(makeFeedEvent(sessionId, 'activity', TOOL_LABELS[raw.name ?? ''] ?? 'Working on it'))
           }
         }
-      }
-      if ('error' in msg && typeof msg.error === 'string') {
-        out.push(mk(sessionId, 'error', friendlyError(msg.error)))
       }
       return out
     }
     case 'result': {
-      if (msg.subtype === 'success') return [mk(sessionId, 'summary', 'Done.')]
-      return [mk(sessionId, 'error', 'Something went wrong while building this — let’s try again.')]
+      if (msg.subtype === 'success') return [makeFeedEvent(sessionId, 'summary', 'Done.')]
+      // Surface the specific friendly copy when the SDK gives a known error code.
+      const code = (msg as { error?: string; subtype?: string }).error ?? (msg as { subtype?: string }).subtype
+      return [makeFeedEvent(sessionId, 'error', friendlyError(code))]
     }
     default:
       // system / partial / tool-progress / etc. — not surfaced as feed events in Phase 1

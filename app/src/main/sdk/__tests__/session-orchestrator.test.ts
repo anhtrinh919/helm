@@ -5,7 +5,7 @@ import { createProject } from '../../db/projects'
 import { createCard, getCard } from '../../db/cards'
 import { getSession } from '../../db/sessions'
 import { getEvents } from '../../db/feed-events'
-import { createQuestion } from '../../db/question-queue'
+import { createQuestion, listQuestions } from '../../db/question-queue'
 import { SessionOrchestrator } from '../session-orchestrator'
 import type { SessionCallbacks, SessionHandle, StartSessionOptions } from '../session-runner'
 
@@ -62,6 +62,24 @@ describe('SessionOrchestrator', () => {
     expect(getSession(db, session.id).status).toBe('active')
     expect(getCard(db, cardId).status).toBe('building')
     expect(getCard(db, cardId).sessionId).toBe(session.id)
+  })
+
+  it('enforces one Building spotlight per project — a second start throws', () => {
+    const { orch, projectId, cardId } = setup()
+    const second = createCard(db, projectId, 'feature', 'Reports')
+    orch.start(projectId, cardId)
+    expect(() => orch.start(projectId, second.id)).toThrow()
+    // the second card never entered building
+    expect(getCard(db, second.id).status).toBe('planned')
+  })
+
+  it('persisted feed survives the live handle (backfill source of truth)', () => {
+    const { fr, orch, projectId, cardId } = setup()
+    const session = orch.start(projectId, cardId)
+    fr.cb().onMessage(assistantText('Reading the project structure.'))
+    // getEvents is what the renderer backfills from on (re)open — it must hold the event.
+    const persisted = getEvents(db, session.id)
+    expect(persisted.some((e) => e.kind === 'narration' && e.text === 'Reading the project structure.')).toBe(true)
   })
 
   it('streams narration and activity as user-safe feed events', () => {
@@ -129,12 +147,21 @@ describe('SessionOrchestrator', () => {
   it('answerDecision records the answer, resumes the session, and replies to the engine', () => {
     const { fr, orch, projectId, cardId } = setup()
     const session = orch.start(projectId, cardId)
-    const q = createQuestion(db, session.id, { type: 'freetext', question: 'CSV or PDF?' }, 0)
+    // Drive a real decision so the session is genuinely paused before we answer.
+    fr.cb().onMessage(assistantText('{"decision":{"question":"CSV or PDF?"}}'))
+    const q = listQuestions(db, session.id)[0]
     orch.answerDecision(session.id, q.id, 'CSV')
     expect(getSession(db, session.id).status).toBe('active')
     expect(getCard(db, cardId).status).toBe('building')
     expect(fr.replyCalls).toEqual(['CSV'])
     expect(getEvents(db, session.id).some((e) => e.text === 'You answered: CSV')).toBe(true)
+  })
+
+  it('answerDecision on a session that is not paused for a decision throws', () => {
+    const { orch, projectId, cardId } = setup()
+    const session = orch.start(projectId, cardId)
+    const q = createQuestion(db, session.id, { type: 'freetext', question: 'CSV or PDF?' }, 0)
+    expect(() => orch.answerDecision(session.id, q.id, 'CSV')).toThrow()
   })
 
   it('steer on an unknown session returns false', () => {
@@ -145,7 +172,8 @@ describe('SessionOrchestrator', () => {
   it('reopen re-blocks the build, narrates it, and nudges the engine', () => {
     const { fr, orch, projectId, cardId } = setup()
     const session = orch.start(projectId, cardId)
-    const q = createQuestion(db, session.id, { type: 'freetext', question: 'CSV or PDF?' }, 0)
+    fr.cb().onMessage(assistantText('{"decision":{"question":"CSV or PDF?"}}'))
+    const q = listQuestions(db, session.id)[0]
     orch.answerDecision(session.id, q.id, 'CSV')
     fr.replyCalls.length = 0
 

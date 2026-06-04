@@ -21,3 +21,16 @@ export class CannotReopenError extends Error {
 export class NoCheckpointError extends Error {
   readonly code = 'no_checkpoint' as const
 }
+
+/** Another card in the project is already in the Building spotlight (Phase 1: one at a time). */
+export class SpotlightOccupiedError extends Error {
+  readonly code = 'session_already_active' as const
+  constructor(readonly sessionId: string) {
+    super('another card is already building')
+  }
+}
+
+/** Tried to answer a decision on a session that isn't paused for one. */
+export class NotAwaitingDecisionError extends Error {
+  readonly code = 'not_awaiting_decision' as const
+}

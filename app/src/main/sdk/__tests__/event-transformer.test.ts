@@ -35,8 +35,38 @@ describe('event-transformer (hard gate)', () => {
       's1',
       assistant([text('Quick question first:\n```json\n{"decision":{"question":"Dark mode by default?"}}\n```')]),
     )
-    expect(out[0].kind).toBe('decision_prompt')
-    expect(out[0].text).toBe('Dark mode by default?')
+    // the leading prose is preserved as narration, then the decision pauses
+    expect(out.map((e) => e.kind)).toEqual(['narration', 'decision_prompt'])
+    expect(out.find((e) => e.kind === 'narration')?.text).toBe('Quick question first:')
+    expect(out.find((e) => e.kind === 'decision_prompt')?.text).toBe('Dark mode by default?')
+  })
+
+  it('a marker mid-paragraph keeps the surrounding prose AND pauses (no narration is dropped)', () => {
+    const out = transform(
+      's1',
+      assistant([text('I could go two ways. {"decision":{"question":"Password or magic link?"}} Let me know.')]),
+    )
+    expect(out.find((e) => e.kind === 'decision_prompt')?.text).toBe('Password or magic link?')
+    const prose = out.filter((e) => e.kind === 'narration').map((e) => e.text).join(' ')
+    expect(prose).toContain('I could go two ways.')
+    expect(prose).toContain('Let me know.')
+    // raw JSON braces never leak into narration
+    expect(out.every((e) => !e.text.includes('{'))).toBe(true)
+  })
+
+  it('a NON-decision JSON blob is dropped, never narrated as raw braces (hard gate)', () => {
+    const out = transform('s1', assistant([text('Here is the shape: {"plan":{"steps":[1,2,3]}} done.')]))
+    expect(out.every((e) => e.kind !== 'decision_prompt')).toBe(true)
+    expect(out.every((e) => !e.text.includes('{') && !e.text.includes('}'))).toBe(true)
+    const prose = out.map((e) => e.text).join(' ')
+    expect(prose).toContain('Here is the shape:')
+    expect(prose).toContain('done.')
+  })
+
+  it('an unbalanced JSON fragment fails closed — the fragment never reaches narration', () => {
+    const out = transform('s1', assistant([text('Working on it {"decision":{"question":"unclosed')]))
+    expect(out.every((e) => !e.text.includes('{'))).toBe(true)
+    expect(out.find((e) => e.kind === 'narration')?.text).toBe('Working on it')
   })
 
   it('text mentioning "decision" but with no valid marker stays narration', () => {

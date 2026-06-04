@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os'
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { DecisionPrompt, PlanBlock } from '../../shared/ipc-schemas'
 import type { Db } from '../db/connection'
+import { NotFoundError } from '../db/errors'
 import { createSession, updateSessionStatus } from '../db/sessions'
-import { transform } from './event-transformer'
+import { assistantText } from './event-transformer'
 import { extractJson } from './json-extract'
 import {
   startSession,
@@ -152,7 +153,7 @@ export class WizardOrchestrator {
     answer: string,
   ): Promise<{ reply: ScopingReply; asked: number }> {
     const ws = this.sessions.get(sessionId)
-    if (!ws) throw new Error('scoping session not found')
+    if (!ws) throw new NotFoundError('scoping session not found')
     const next = this.awaitTurn(sessionId)
     ws.handle.reply(answer)
     const reply = await next
@@ -189,9 +190,8 @@ export class WizardOrchestrator {
   private ingest(sessionId: string, msg: SDKMessage): void {
     const ws = this.sessions.get(sessionId)
     if (!ws) return
-    for (const ev of transform(sessionId, msg)) {
-      if (ev.kind === 'narration') ws.buffer += `\n${ev.text}`
-    }
+    const text = assistantText(msg)
+    if (text) ws.buffer += `\n${text}`
     if (msg.type !== 'result') return
 
     const parsed = classifyScoping(extractJson(ws.buffer))
