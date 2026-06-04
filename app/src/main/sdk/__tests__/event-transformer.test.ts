@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
-import { transform } from '../event-transformer'
+import { stripCode, transform } from '../event-transformer'
 
 const assistant = (blocks: unknown[]): SDKMessage =>
   ({ type: 'assistant', message: { content: blocks } }) as unknown as SDKMessage
@@ -91,5 +91,60 @@ describe('event-transformer (hard gate)', () => {
 
   it('system / partial messages produce no feed events', () => {
     expect(transform('s1', { type: 'system' } as unknown as SDKMessage)).toEqual([])
+  })
+
+  /* ---- Phase 2: real tool calls (Write/Edit/Bash) must not leak code/paths ---- */
+
+  it('real file-writing tool_use surfaces only a friendly label — path in args never read', () => {
+    // The SDK only gives us the tool name in the label path; args are never read.
+    const out = transform('s1', assistant([tool('Write'), tool('Edit'), tool('MultiEdit')]))
+    expect(out.map((e) => e.text)).toEqual(['Writing some code', 'Editing the code', 'Editing the code'])
+  })
+
+  it('a fenced code block in assistant text is stripped whole — never narrated', () => {
+    const out = transform(
+      's1',
+      assistant([
+        text('Wiring the route.\n```ts\nconst db = open("/Users/me/app/helm.db")\n```\nDone wiring.'),
+      ]),
+    )
+    const prose = out.map((e) => e.text).join(' ')
+    expect(prose).toContain('Wiring the route.')
+    expect(prose).toContain('Done wiring.')
+    // no code, no backticks, no path leaked
+    expect(prose).not.toContain('const db')
+    expect(prose).not.toContain('/Users/')
+    expect(prose).not.toContain('`')
+  })
+
+  it('inline backtick literals and absolute paths are scrubbed from narration', () => {
+    const out = transform(
+      's1',
+      assistant([text('Saved the file to /Users/me/dev/app/src/index.ts and ran `npm run build`.')]),
+    )
+    const prose = out.map((e) => e.text).join(' ')
+    expect(prose).not.toContain('/Users/')
+    expect(prose).not.toContain('`')
+    expect(prose).not.toContain('npm run build')
+    expect(prose).toContain('Saved the file to')
+  })
+
+  it('a decision marker still pauses even when the same turn also contains a code block', () => {
+    const out = transform(
+      's1',
+      assistant([
+        text('```bash\ncd /tmp/app && npm i\n```\n{"decision":{"question":"Use SQLite or Postgres?","options":["SQLite","Postgres"]}}'),
+      ]),
+    )
+    const decision = out.find((e) => e.kind === 'decision_prompt')
+    expect(decision?.text).toBe('Use SQLite or Postgres?')
+    expect(decision?.options).toEqual(['SQLite', 'Postgres'])
+    // the shell command never reaches narration
+    expect(out.every((e) => !e.text.includes('npm i') && !e.text.includes('/tmp/'))).toBe(true)
+  })
+
+  it('stripCode leaves ordinary prose (including slashes like and/or) intact', () => {
+    expect(stripCode('Pick CSV and/or PDF — your call.')).toBe('Pick CSV and/or PDF — your call.')
+    expect(stripCode('No code here at all.')).toBe('No code here at all.')
   })
 })

@@ -59,18 +59,50 @@ export function assistantText(msg: SDKMessage): string {
 }
 
 /**
+ * Defense-in-depth for real-pipeline (Phase 2) sessions: even though the build
+ * prompt forbids code/paths in narration, the agent now has real file-writing
+ * and shell tools, so a stray code block, inline literal, or absolute path could
+ * appear in assistant text. `stripCode` scrubs all of it from narration BEFORE
+ * a FeedEvent is built. Fenced code blocks are removed whole (content included),
+ * inline backtick spans are removed, and absolute filesystem paths are scrubbed.
+ * Pairs with `splitJson` (which removes JSON objects + bare braces).
+ */
+export function stripCode(text: string): string {
+  let t = text
+  // Fenced code blocks — language tag + content + delimiters, removed whole.
+  t = t.replace(/```[\s\S]*?```/g, ' ')
+  t = t.replace(/```/g, ' ') // any stray/unclosed fence marker
+  // Inline backtick spans (and stray backticks).
+  t = t.replace(/`[^`]*`/g, ' ').replace(/`/g, ' ')
+  // Absolute filesystem paths (unix roots + Windows drive paths).
+  t = t.replace(
+    /\/(?:Users|home|private|var|tmp|etc|opt|usr|bin|sbin|root|mnt|srv|app|node_modules|src|dist|out|build)\b(?:\/[\w.@ +~-]+)*\/?/gi,
+    ' ',
+  )
+  t = t.replace(/[A-Za-z]:\\[\w\\. @+~-]+/g, ' ')
+  // Collapse the whitespace the removals left behind.
+  return t.replace(/[ \t]{2,}/g, ' ').replace(/ *\n */g, '\n').trim()
+}
+
+/**
  * Smart-pausing: the build prompt tells the engine to emit a single
  * {"decision":{"question":"..."}} object only when it hits a genuine fork a
  * non-developer would care about. We split the turn into prose (narrated) and
  * JSON objects (never narrated): a decision object surfaces a decision_prompt
  * (which pauses the build); any other JSON is dropped so raw braces can't leak.
+ *
+ * The prose is additionally run through `stripCode` so no code, inline literal,
+ * or absolute path survives into a narration FeedEvent.
  */
 function splitTurn(text: string): {
   narration: string | null
   question: string | null
   options: string[]
 } {
-  const { prose, objects } = splitJson(text)
+  // Decision objects come from the raw turn (splitJson strips fences to find
+  // them). Narration is built from a code-scrubbed copy, then JSON-stripped.
+  const objects = splitJson(text).objects
+  const prose = splitJson(stripCode(text)).prose
   let question: string | null = null
   let options: string[] = []
   for (const obj of objects) {
