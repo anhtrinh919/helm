@@ -33,6 +33,67 @@ export function createMockBridge(): HelmApi {
   ]
   const cards: Record<string, Card[]> = {}
 
+  const card = (
+    projectId: string,
+    position: number,
+    type: 'feature' | 'bug',
+    title: string,
+    status: Card['status'],
+    extra: Partial<Card> = {},
+  ): Card => ({
+    id: uid(),
+    projectId,
+    type,
+    title,
+    status,
+    source: 'plan_seed',
+    position,
+    stepLabel: `Step ${position + 1} of 8: ${title}`,
+    dependsOn: [],
+    createdAt: now - 1_000_000,
+    updatedAt: status === 'building' ? now - 222_000 : now - 1_000_000,
+    sessionId: status === 'building' ? 'mock-session' : null,
+    decisionPrompt: null,
+    checkpoint: null,
+    ...extra,
+  })
+
+  // Seed the active project to match the design's build-spine (F11).
+  {
+    const pid = projects[0].id
+    const shell = card(pid, 0, 'feature', 'Set up the project shell', 'done')
+    const signin = card(pid, 1, 'feature', 'Sign-in & accounts', 'building')
+    const inbox = card(pid, 2, 'feature', 'Feedback inbox view', 'up_next')
+    const submit = card(pid, 3, 'feature', 'Submit a piece of feedback', 'up_next', {
+      dependsOn: [inbox.id],
+    })
+    const tagging = card(pid, 4, 'feature', 'Tagging & labels', 'planned', {
+      dependsOn: [inbox.id],
+    })
+    const replies = card(pid, 5, 'feature', 'Threaded replies', 'planned', {
+      dependsOn: [submit.id],
+    })
+    cards[pid] = [shell, signin, inbox, submit, tagging, replies]
+  }
+
+  // Seed the second project paused on a real decision so the headline renders.
+  {
+    const pid = projects[1].id
+    cards[pid] = [
+      card(pid, 0, 'feature', 'Employee directory', 'done'),
+      card(pid, 1, 'feature', 'Time-off requests', 'needs_you', {
+        sessionId: 'mock-session-2',
+        decisionPrompt: {
+          type: 'buttons',
+          question: 'Should time-off approvals need one manager or two?',
+          options: ['One manager', 'Two managers', 'No approval needed'],
+        },
+      }),
+      card(pid, 2, 'feature', 'Approval workflow', 'planned'),
+      card(pid, 3, 'bug', 'Calendar shows wrong week', 'planned'),
+    ]
+  }
+
   return {
     projects: {
       list: async () => ({ projects: [...projects].sort((a, b) => b.updatedAt - a.updatedAt) }),

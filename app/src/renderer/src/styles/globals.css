@@ -47,3 +47,14 @@ body {
 .brut-2 {
   border: 2px solid var(--color-ink);
 }
+
+/* Indeterminate activity bar for the building spotlight — a sliding pill that
+   reads as "something is happening" without faking a percentage. */
+@keyframes helmslide {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(420%);
+  }
+}
