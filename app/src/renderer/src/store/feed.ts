@@ -9,7 +9,7 @@ import {
   type SteerMode,
 } from '@shared/ipc-schemas'
 
-export type FeedStatus = 'idle' | 'active' | 'paused_for_decision' | 'done' | 'error'
+export type FeedStatus = 'idle' | 'active' | 'paused_for_decision' | 'done' | 'error' | 'stopped'
 
 interface FeedState {
   projectId: string | null
@@ -36,7 +36,9 @@ interface FeedState {
 
 /** Infer the UI status from a reattached session's feed + questions. */
 function inferStatus(events: FeedEvent[], questions: QuestionQueueItem[]): FeedStatus {
-  if (events.some((e) => e.kind === 'error')) return 'error'
+  // The last terminal marker wins — a stop or error after activity ends the session.
+  const lastTerminal = [...events].reverse().find((e) => e.kind === 'stopped' || e.kind === 'error')
+  if (lastTerminal) return lastTerminal.kind === 'stopped' ? 'stopped' : 'error'
   if (events.some((e) => e.kind === 'checkpoint')) return 'done'
   if (questions.some((q) => q.status === 'pending' || q.status === 'reopened')) {
     return 'paused_for_decision'
@@ -123,6 +125,7 @@ export const useFeed = create<FeedState>((set, get) => ({
       if (s.events.some((e) => e.id === ev.id)) return s
       const next: Partial<FeedState> = { events: [...s.events, ev] }
       if (ev.kind === 'checkpoint') next.status = 'done'
+      else if (ev.kind === 'stopped') next.status = 'stopped'
       else if (ev.kind === 'error') next.status = 'error'
       else if (ev.kind === 'decision_prompt') next.status = 'paused_for_decision'
       return next as FeedState

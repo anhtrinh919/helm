@@ -30,6 +30,15 @@ describe('event-transformer (hard gate)', () => {
     expect(out[0].text).toBe('Should the export be CSV or PDF?')
   })
 
+  it('a decision marker carries button options through to the event', () => {
+    const out = transform(
+      's1',
+      assistant([text('{"decision":{"question":"Export format?","options":["CSV","PDF"]}}')]),
+    )
+    expect(out[0].kind).toBe('decision_prompt')
+    expect(out[0].options).toEqual(['CSV', 'PDF'])
+  })
+
   it('tolerates a decision marker wrapped in prose / code fences', () => {
     const out = transform(
       's1',

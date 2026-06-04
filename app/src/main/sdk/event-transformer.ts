@@ -65,18 +65,29 @@ export function assistantText(msg: SDKMessage): string {
  * JSON objects (never narrated): a decision object surfaces a decision_prompt
  * (which pauses the build); any other JSON is dropped so raw braces can't leak.
  */
-function splitTurn(text: string): { narration: string | null; question: string | null } {
+function splitTurn(text: string): {
+  narration: string | null
+  question: string | null
+  options: string[]
+} {
   const { prose, objects } = splitJson(text)
   let question: string | null = null
+  let options: string[] = []
   for (const obj of objects) {
     if (!obj || typeof obj !== 'object') continue
     const d = (obj as Record<string, unknown>).decision
     if (d && typeof d === 'object') {
-      const q = (d as Record<string, unknown>).question
-      if (typeof q === 'string' && q.trim() && !question) question = q.trim()
+      const rec = d as Record<string, unknown>
+      const q = rec.question
+      if (typeof q === 'string' && q.trim() && !question) {
+        question = q.trim()
+        options = Array.isArray(rec.options)
+          ? rec.options.filter((x): x is string => typeof x === 'string' && !!x.trim()).slice(0, 4)
+          : []
+      }
     }
   }
-  return { narration: prose ? prose : null, question }
+  return { narration: prose ? prose : null, question, options }
 }
 
 type Block = { type: string; text?: string; name?: string }
@@ -90,9 +101,13 @@ export function transform(sessionId: string, msg: SDKMessage): FeedEvent[] {
       if (Array.isArray(content)) {
         for (const raw of content as Block[]) {
           if (raw.type === 'text' && typeof raw.text === 'string' && raw.text.trim()) {
-            const { narration, question } = splitTurn(raw.text)
+            const { narration, question, options } = splitTurn(raw.text)
             if (narration) out.push(makeFeedEvent(sessionId, 'narration', narration))
-            if (question) out.push(makeFeedEvent(sessionId, 'decision_prompt', question))
+            if (question) {
+              const ev = makeFeedEvent(sessionId, 'decision_prompt', question)
+              if (options.length) ev.options = options
+              out.push(ev)
+            }
           } else if (raw.type === 'tool_use') {
             out.push(makeFeedEvent(sessionId, 'activity', TOOL_LABELS[raw.name ?? ''] ?? 'Working on it'))
           }

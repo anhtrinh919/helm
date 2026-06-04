@@ -16,6 +16,7 @@ export const FeedEventKind = z.enum([
   'checkpoint',
   'summary',
   'error',
+  'stopped',
 ])
 export type FeedEventKind = z.infer<typeof FeedEventKind>
 
@@ -37,7 +38,7 @@ export type CardStatus = z.infer<typeof CardStatus>
 export const CardSource = z.enum(['plan_seed', 'user_added', 'agent_raised'])
 export type CardSource = z.infer<typeof CardSource>
 
-export const SessionStatus = z.enum(['active', 'paused_for_decision', 'done', 'error', 'failed'])
+export const SessionStatus = z.enum(['active', 'paused_for_decision', 'done', 'error', 'failed', 'stopped'])
 export type SessionStatus = z.infer<typeof SessionStatus>
 
 export const QuestionStatus = z.enum(['pending', 'answered', 'reopened'])
@@ -121,6 +122,8 @@ export const FeedEvent = z.object({
   text: z.string(),
   /** Links a `decision_prompt` event to its question, or a `checkpoint` event to its card. */
   refId: z.string().nullable(),
+  /** Button choices for a `decision_prompt` (in-flight only; the queued question holds the canonical prompt). */
+  options: z.array(z.string()).optional(),
   createdAt: z.number(),
 })
 export type FeedEvent = z.infer<typeof FeedEvent>

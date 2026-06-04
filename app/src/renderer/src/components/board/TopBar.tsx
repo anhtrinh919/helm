@@ -30,10 +30,12 @@ export function TopBar({
   const elapsed = useElapsed(building ? building.updatedAt : null)
 
   return (
-    <div className="flex items-center justify-between">
-      <div className="font-display text-3xl font-black leading-none text-ink">{projectName}</div>
+    <div className="flex items-center justify-between gap-4">
+      <div className="min-w-0 truncate font-display text-3xl font-black leading-none text-ink">
+        {projectName}
+      </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-3">
         {building && (
           <div className="flex items-center gap-2.5 rounded-full brut-2 bg-cream px-3.5 py-2">
             <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-lime" />

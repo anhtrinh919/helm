@@ -94,6 +94,39 @@ describe('SessionOrchestrator', () => {
     ])
   })
 
+  it('a decision marker with options queues a tap-a-button question', () => {
+    const { fr, orch, projectId, cardId } = setup()
+    const session = orch.start(projectId, cardId)
+    fr.cb().onMessage(assistantText('{"decision":{"question":"CSV or PDF?","options":["CSV","PDF"]}}'))
+    const q = listQuestions(db, session.id)[0]
+    expect(q.prompt.type).toBe('buttons')
+    expect(q.prompt.options).toEqual(['CSV', 'PDF'])
+  })
+
+  it('a user Stop ends the session calmly — stopped, not error; card returns to up_next', () => {
+    const { fr, orch, projectId, cardId } = setup()
+    const session = orch.start(projectId, cardId)
+    fr.cb().onMessage(assistantText('Working on it.'))
+    expect(orch.steer(session.id, 'interrupt', '')).toBe(true)
+    // the engine aborts -> close (or error) fires; either way it's a clean halt
+    fr.cb().onClose()
+    expect(getSession(db, session.id).status).toBe('stopped')
+    expect(getCard(db, cardId).status).toBe('up_next')
+    const events = getEvents(db, session.id)
+    expect(events.some((e) => e.kind === 'stopped')).toBe(true)
+    expect(events.some((e) => e.kind === 'error')).toBe(false)
+    expect(events.some((e) => e.kind === 'checkpoint')).toBe(false)
+  })
+
+  it('a Stop followed by an engine error still halts cleanly (no scary error event)', () => {
+    const { fr, orch, projectId, cardId } = setup()
+    const session = orch.start(projectId, cardId)
+    orch.steer(session.id, 'interrupt', '')
+    fr.cb().onError('aborted')
+    expect(getSession(db, session.id).status).toBe('stopped')
+    expect(getEvents(db, session.id).some((e) => e.kind === 'error')).toBe(false)
+  })
+
   it('a genuine-decision marker from the engine pauses the build and queues a question', () => {
     const { fr, orch, projectId, cardId } = setup()
     const session = orch.start(projectId, cardId)

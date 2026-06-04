@@ -315,6 +315,15 @@ export function createMockBridge(): HelmApi {
         const verb =
           mode === 'interrupt' ? 'Asked it to stop' : mode === 'redirect' ? 'Redirected it' : 'Asked it to look closer'
         emitFeed(sessionId, 'steering', `${verb}: ${text}`)
+        if (mode === 'interrupt') {
+          // A deliberate stop: halt calmly, return the card to up_next (resumable).
+          emitFeed(sessionId, 'stopped', 'You stopped this build — your place is saved.')
+          const c = sessionCard[sessionId]
+          if (c) {
+            c.status = 'up_next'
+            pushBoard(c)
+          }
+        }
         return { ok: true as const }
       },
       answerDecision: async (sessionId, questionId, answer) => {

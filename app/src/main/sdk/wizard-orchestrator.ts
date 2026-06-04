@@ -36,8 +36,8 @@ function scopingPrompt(idea: string): string {
     `A non-technical person wants to build: "${idea}".`,
     `You are scoping it into a buildable plan. Ask up to ${SCOPING_TOTAL} short, high-leverage questions, ONE per turn.`,
     `Reply with ONLY a single JSON object — no prose, no code fences.`,
-    `To ask a question: {"ask":{"question":"...","type":"buttons","options":["..",".."]}} (2-4 options),`,
-    `or {"ask":{"question":"...","type":"freetext"}} when an open answer fits better.`,
+    `PREFER buttons so they can just tap an answer: {"ask":{"question":"...","type":"buttons","options":["..",".."]}} (2-4 short, concrete options).`,
+    `Only use {"ask":{"question":"...","type":"freetext"}} when the answer genuinely needs their own words (e.g. a name).`,
     `When you have enough, reply: {"plan":{"name":"<short product name, 1-4 words>","steps":[{"title":"<short>","detail":"<one sentence>"}]}} with 4-7 steps.`,
     `Ask your first question now.`,
   ].join(' ')

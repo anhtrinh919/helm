@@ -62,7 +62,9 @@ export const useWizard = create<WizardState>((set, get) => {
     ...BLANK,
 
     begin: async (idea) => {
-      const proj = await helm.projects.create(idea.trim().slice(0, 80) || 'New project')
+      // Short placeholder until the agent names it on plan approval — the raw idea
+      // sentence is too long for headers (it overflowed the board title).
+      const proj = await helm.projects.create('New build')
       if (isIpcError(proj)) {
         set({ idea, step: 'error', projectId: null, ...BLANK })
         useProjects.getState().openWizard('')

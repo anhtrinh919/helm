@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import type { SteerMode } from '@shared/ipc-schemas'
 
-const MODES: { id: SteerMode; label: string }[] = [
-  { id: 'interrupt', label: 'Interrupt' },
+// Stop is a one-click halt (no words needed). The other two steer a running build.
+const DIRECTIONS: { id: SteerMode; label: string }[] = [
   { id: 'redirect', label: 'Redirect' },
   { id: 'look_closer', label: 'Look closer' },
 ]
 
-/** The "STEERING" card — interrupt / redirect / look-closer + a free-text direction. */
+/** The "STEERING" card — a one-click Stop, plus redirect / look-closer with a direction. */
 export function SteeringInput({
   disabled,
   onSteer,
@@ -26,7 +26,16 @@ export function SteeringInput({
 
   return (
     <div className="rounded-[18px] brut bg-cream p-4">
-      <div className="text-[11px] font-black tracking-[0.18em] text-ink">STEERING</div>
+      <div className="flex items-center justify-between">
+        <div className="text-[11px] font-black tracking-[0.18em] text-ink">STEERING</div>
+        <button
+          onClick={() => onSteer('interrupt', '')}
+          disabled={disabled}
+          className="rounded-full brut-2 bg-orangesoft px-3 py-1.5 text-xs font-bold text-ink disabled:opacity-40"
+        >
+          ■ Stop
+        </button>
+      </div>
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -38,7 +47,7 @@ export function SteeringInput({
         className="mt-2 w-full resize-none rounded-[12px] brut-2 bg-canvas px-3 py-2 text-sm text-ink outline-none placeholder:text-soft/55"
       />
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        {MODES.map((m) => (
+        {DIRECTIONS.map((m) => (
           <button
             key={m.id}
             onClick={() => setMode(m.id)}

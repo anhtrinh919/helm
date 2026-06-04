@@ -19,7 +19,7 @@ import {
 } from '../db/sessions'
 import { appendEvent } from '../db/feed-events'
 import { answerQuestion, createQuestion, nextPosition, reopenQuestion } from '../db/question-queue'
-import type { QuestionQueueItem } from '../../shared/ipc-schemas'
+import type { DecisionPrompt, QuestionQueueItem } from '../../shared/ipc-schemas'
 import { makeFeedEvent, transform } from './event-transformer'
 import {
   startSession,
@@ -42,6 +42,8 @@ type Runner = (opts: StartSessionOptions, cb: SessionCallbacks) => SessionHandle
 export class SessionOrchestrator {
   private handles = new Map<string, SessionHandle>()
   private finalized = new Set<string>()
+  /** Sessions the user deliberately stopped — their close/error is a clean halt, not a failure. */
+  private interrupted = new Set<string>()
 
   constructor(
     private db: Db,
@@ -80,7 +82,9 @@ export class SessionOrchestrator {
       `Make routine technical choices silently — only the kind a non-developer would never care about.`,
       `When you hit a GENUINE fork that changes what the product does or how it feels`,
       `(a feature direction, a design choice, user-facing wording), STOP and ask — emit exactly one`,
-      `JSON object on its own line: {"decision":{"question":"<plain-English question>"}} and nothing else.`,
+      `JSON object on its own line. Prefer giving 2-4 concrete choices as buttons:`,
+      `{"decision":{"question":"<plain-English question>","options":["<choice>","<choice>"]}}.`,
+      `Only omit "options" when the answer truly needs their own words. Nothing else on that line.`,
       `Otherwise keep narrating. Say when the first pass is ready.`,
     ].join(' ')
   }
@@ -135,20 +139,26 @@ export class SessionOrchestrator {
     // 'summary' ("Done.") is superseded by the reviewable checkpoint we emit on finish.
     if (ev.kind === 'summary') return
     if (ev.kind === 'decision_prompt') {
-      this.pause(sessionId, projectId, cardId, ev.text)
+      this.pause(sessionId, projectId, cardId, ev.text, ev.options)
       return
     }
     this.emit(ev, rawPayload)
   }
 
-  /** The engine asked for a genuine decision: queue it and pause the build. */
-  private pause(sessionId: string, projectId: string, cardId: string, question: string): void {
-    const q = createQuestion(
-      this.db,
-      sessionId,
-      { type: 'freetext', question },
-      nextPosition(this.db, sessionId),
-    )
+  /** The engine asked for a genuine decision: queue it and pause the build.
+   *  Options (if the engine offered any) make it a tap-a-button card; else free text. */
+  private pause(
+    sessionId: string,
+    projectId: string,
+    cardId: string,
+    question: string,
+    options?: string[],
+  ): void {
+    const prompt: DecisionPrompt =
+      options && options.length
+        ? { type: 'buttons', question, options }
+        : { type: 'freetext', question }
+    const q = createQuestion(this.db, sessionId, prompt, nextPosition(this.db, sessionId))
     this.emit(makeFeedEvent(sessionId, 'decision_prompt', question, q.id))
     this.send(CH.questionUpdate, { sessionId, question: q })
     updateSessionStatus(this.db, sessionId, 'paused_for_decision')
@@ -160,10 +170,13 @@ export class SessionOrchestrator {
     this.pushBackground(projectId)
   }
 
-  /** Steer a running session. Returns false if the session isn't live. */
+  /** Steer a running session. Returns false if the session isn't live.
+   *  'interrupt' is a deliberate stop: mark it so the resulting close is a clean
+   *  halt (not an error), then let the engine abort. */
   steer(sessionId: string, mode: SteerMode, text: string): boolean {
     const handle = this.handles.get(sessionId)
     if (!handle) return false
+    if (mode === 'interrupt') this.interrupted.add(sessionId)
     this.emit(makeFeedEvent(sessionId, 'steering', steeringLabel(mode, text)))
     void handle.steer(mode, text)
     return true
@@ -221,6 +234,7 @@ export class SessionOrchestrator {
 
   private finish(sessionId: string, projectId: string, cardId: string): void {
     if (this.finalized.has(sessionId)) return
+    if (this.interrupted.has(sessionId)) return this.halt(sessionId, projectId, cardId)
     this.finalized.add(sessionId)
     this.handles.delete(sessionId)
 
@@ -235,6 +249,7 @@ export class SessionOrchestrator {
 
   private fail(sessionId: string, projectId: string, cardId: string, message: string): void {
     if (this.finalized.has(sessionId)) return
+    if (this.interrupted.has(sessionId)) return this.halt(sessionId, projectId, cardId)
     this.finalized.add(sessionId)
     this.handles.delete(sessionId)
 
@@ -244,6 +259,24 @@ export class SessionOrchestrator {
       this.pushBoard(updateCardStatus(this.db, cardId, 'failed'))
     } catch {
       /* best effort */
+    }
+    this.pushBackground(projectId)
+  }
+
+  /** A user-initiated stop. Ends the session calmly — no error, no checkpoint —
+   *  and returns the card to up_next so it can be picked back up. */
+  private halt(sessionId: string, projectId: string, cardId: string): void {
+    if (this.finalized.has(sessionId)) return
+    this.finalized.add(sessionId)
+    this.interrupted.delete(sessionId)
+    this.handles.delete(sessionId)
+
+    updateSessionStatus(this.db, sessionId, 'stopped')
+    this.emit(makeFeedEvent(sessionId, 'stopped', 'You stopped this build — your place is saved.'))
+    try {
+      this.pushBoard(updateCardStatus(this.db, cardId, 'up_next'))
+    } catch {
+      /* card may not allow the transition — leave it as-is */
     }
     this.pushBackground(projectId)
   }

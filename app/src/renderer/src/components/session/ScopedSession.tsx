@@ -15,7 +15,8 @@ const PULSE: Record<FeedStatus, { label: string; dot: string }> = {
   active: { label: 'WORKING', dot: 'bg-lime' },
   paused_for_decision: { label: 'NEEDS YOU', dot: 'bg-pink' },
   done: { label: 'DONE', dot: 'bg-mint' },
-  error: { label: 'STOPPED', dot: 'bg-orange' },
+  stopped: { label: 'STOPPED', dot: 'bg-soft' },
+  error: { label: 'FAILED', dot: 'bg-orange' },
 }
 
 /** The scoped session screen (F16–F21): live feed, steering, question queue, checkpoint. */
@@ -126,6 +127,13 @@ export function ScopedSession({
                   {events.map((ev) => (
                     <FeedEventRow key={ev.id} event={ev} />
                   ))}
+                  {status === 'active' && (
+                    <div className="flex items-center gap-1.5 pl-[76px] pt-1" aria-label="Agent is working">
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-lime [animation-delay:-0.3s]" />
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-lime [animation-delay:-0.15s]" />
+                      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-lime" />
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -136,6 +144,29 @@ export function ScopedSession({
                     onApprove={() => void approveCheckpoint('approved')}
                     onFlag={(note) => void approveCheckpoint('flagged', note)}
                   />
+                </div>
+              )}
+
+              {status === 'stopped' && (
+                <div className="mt-5 rounded-[18px] brut bg-cream p-5">
+                  <div className="font-display text-xl font-black text-ink">You stopped this build</div>
+                  <div className="mt-1 text-sm text-soft">
+                    Your place is saved — pick it back up whenever you’re ready.
+                  </div>
+                  <div className="mt-4 flex gap-2">
+                    <button
+                      onClick={() => void retry()}
+                      className="rounded-full brut-2 bg-lime px-4 py-2 text-sm font-bold text-ink"
+                    >
+                      Resume building
+                    </button>
+                    <button
+                      onClick={onBack}
+                      className="rounded-full brut-2 bg-cream px-4 py-2 text-sm font-bold text-ink"
+                    >
+                      Back to board
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -175,7 +206,9 @@ export function ScopedSession({
                 onReopen={(qid) => void reopen(qid)}
               />
               <SteeringInput
-                disabled={status === 'idle' || status === 'done' || status === 'error'}
+                disabled={
+                  status === 'idle' || status === 'done' || status === 'error' || status === 'stopped'
+                }
                 onSteer={(mode, text) => void steer(mode, text)}
               />
             </div>

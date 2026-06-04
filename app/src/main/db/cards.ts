@@ -8,7 +8,7 @@ import { toCard, type CardRow } from './mappers'
 const TRANSITIONS: Record<CardStatus, CardStatus[]> = {
   planned: ['up_next', 'building'],
   up_next: ['building', 'planned'],
-  building: ['needs_you', 'done', 'failed'],
+  building: ['needs_you', 'done', 'failed', 'up_next'], // up_next: user stopped, resumable
   needs_you: ['building', 'failed'],
   failed: ['building', 'up_next'],
   done: ['building'], // re-open via flagged checkpoint
