@@ -1,0 +1,32 @@
+{
+  "name": "helm",
+  "version": "0.1.0",
+  "description": "Helm — an executive dashboard for building software, for non-developers",
+  "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "verify:group-1": "bash verify-group-1.sh"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.162",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "@types/react": "19.0.2",
+    "@types/react-dom": "19.0.2",
+    "@vitejs/plugin-react": "4.3.4",
+    "electron": "33.2.1",
+    "electron-vite": "2.3.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "tsx": "4.19.2",
+    "typescript": "5.7.2",
+    "vite": "5.4.11"
+  }
+}
