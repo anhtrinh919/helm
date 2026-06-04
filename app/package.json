@@ -14,7 +14,8 @@
     "web": "vite --config vite.web.config.ts",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "verify:group-1": "bash verify-group-1.sh",
-    "verify:group-2": "bash verify-group-2.sh"
+    "verify:group-2": "bash verify-group-2.sh",
+    "verify:group-9": "bash verify-group-9.sh"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.162",
