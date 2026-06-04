@@ -218,6 +218,34 @@ export class DevServerManager {
     }
   }
 
+  /**
+   * On app relaunch: if the project's previously-running server is still alive,
+   * reconnect the preview to it; otherwise try one fresh start. Never throws —
+   * a project that can't come up is simply left at `none` (needs a build).
+   */
+  async resume(projectId: string): Promise<void> {
+    const dir = getArtifactDir(this.db, projectId)
+    if (!dir) return
+    const manifest = this.deps.readManifest(dir)
+    if (!manifest) {
+      setDevPid(this.db, projectId, null)
+      return
+    }
+    if (this.isRunning(projectId)) {
+      // The server outlived the app — we don't hold its child handle, but the
+      // manifest tells us the URL, so the preview can point at it again.
+      this.setState(projectId, { status: 'live', url: `http://localhost:${manifest.port}` })
+      return
+    }
+    // Stale/dead PID — clear it and try to bring a fresh server up.
+    setDevPid(this.db, projectId, null)
+    try {
+      await this.start(projectId)
+    } catch {
+      this.setState(projectId, { status: 'none' })
+    }
+  }
+
   /** Is the project's stored dev server still a live process? */
   isRunning(projectId: string): boolean {
     const server = this.servers.get(projectId)

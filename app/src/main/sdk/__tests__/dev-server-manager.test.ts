@@ -9,6 +9,7 @@ import {
   type HelmManifest,
   type SpawnedServer,
 } from '../dev-server-manager'
+import { clearAllDevPids, resumeDevServers } from '../preview-resume'
 
 /** A controllable fake of the process world. */
 function fakeDeps(opts?: { probeOk?: () => boolean; hasManifest?: boolean; alivePids?: Set<number> }) {
@@ -162,6 +163,37 @@ describe('DevServerManager', () => {
     expect(rec.states.filter((s) => s.projectId === pid).map((s) => s.state.status)).toContain('snag')
   })
 
+  it('resume reconnects to a still-alive server using the manifest URL', async () => {
+    const rec = recorder()
+    const { deps, alivePids } = fakeDeps()
+    const pid = projectWithArtifact()
+    // Simulate a prior run that left an alive dev server PID behind.
+    setDevPid(db, pid, 5555)
+    alivePids.add(5555)
+    const mgr = new DevServerManager(db, rec.onChange, deps)
+    await mgr.resume(pid)
+    expect(mgr.getState(pid)).toEqual({ status: 'live', url: 'http://localhost:3000' })
+  })
+
+  it('resume restarts a project whose previous server is dead', async () => {
+    const rec = recorder()
+    const pid = projectWithArtifact()
+    setDevPid(db, pid, 999999) // a dead PID
+    const mgr = new DevServerManager(db, rec.onChange, fakeDeps().deps)
+    await mgr.resume(pid)
+    expect(mgr.getState(pid).status).toBe('live')
+  })
+
+  it('resume on a project with no manifest leaves it at none and clears the pid', async () => {
+    const rec = recorder()
+    const pid = projectWithArtifact()
+    setDevPid(db, pid, 4242)
+    const mgr = new DevServerManager(db, rec.onChange, fakeDeps({ hasManifest: false }).deps)
+    await mgr.resume(pid)
+    expect(mgr.getState(pid).status).toBe('none')
+    expect(getDevPid(db, pid)).toBeNull()
+  })
+
   it('isRunning reflects PID liveness — alive on resume, dead after death', async () => {
     const { deps, alivePids } = fakeDeps()
     const mgr = new DevServerManager(db, recorder().onChange, deps)
@@ -177,5 +209,21 @@ describe('DevServerManager', () => {
     // Stored PID dead → not running.
     setDevPid(db, pid, 999999)
     expect(new DevServerManager(db, recorder().onChange, deps).isRunning(pid)).toBe(false)
+  })
+
+  it('resumeDevServers brings every artifact-bearing project back; clearAllDevPids wipes PIDs', async () => {
+    const rec = recorder()
+    const { deps, alivePids } = fakeDeps()
+    const a = projectWithArtifact()
+    const b = createProject(db, 'B').id // no artifact → skipped
+    setDevPid(db, a, 8888)
+    alivePids.add(8888)
+    const mgr = new DevServerManager(db, rec.onChange, deps)
+    await resumeDevServers(db, mgr)
+    expect(mgr.getState(a).status).toBe('live')
+    expect(mgr.getState(b).status).toBe('none') // never touched
+
+    clearAllDevPids(db)
+    expect(getDevPid(db, a)).toBeNull()
   })
 })
