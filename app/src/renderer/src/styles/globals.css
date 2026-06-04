@@ -1,0 +1,60 @@
+@import 'tailwindcss';
+
+/* v4 "Maximalist" canon — mirrors pencil/v0.1.pen variables. */
+@theme {
+  --color-canvas: #ffefd2;
+  --color-surface: #fff7e6;
+  --color-cream: #fff7e6;
+  --color-ink: #1b1208;
+  --color-soft: #5c4a33;
+  --color-railcard: #1f1810;
+  --color-pink: #ff6f91;
+  --color-pinksoft: #ffd4de;
+  --color-violet: #6b4beb;
+  --color-violetsoft: #d9cfff;
+  --color-lime: #c8f23a;
+  --color-limedeep: #6e8500;
+  --color-blue: #3a6cff;
+  --color-bluesoft: #cfe0ff;
+  --color-orange: #ff7a29;
+  --color-orangesoft: #ffd6b8;
+  --color-mint: #7fd4b0;
+
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-ui: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+  overflow: hidden;
+}
+
+/* The signature chunky black outline used throughout the design. */
+.brut {
+  border: 3px solid var(--color-ink);
+}
+.brut-2 {
+  border: 2px solid var(--color-ink);
+}
+
+/* Indeterminate activity bar for the building spotlight — a sliding pill that
+   reads as "something is happening" without faking a percentage. */
+@keyframes helmslide {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(420%);
+  }
+}

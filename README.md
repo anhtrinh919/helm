@@ -8,4 +8,4 @@ TBD
 
 ## Status
 
-Phase 0 — Constitution complete. Phase 1 not started.
+Phase 1 complete — The Executive Dashboard. Phase 2 next: Watch It Get Made.

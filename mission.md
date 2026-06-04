@@ -13,7 +13,7 @@ Calm, in-control, and legible. Helm is an executive dashboard — everything imp
 A non-developer opens Helm, describes an app they want, answers a few questions, and watches a build board populate with features and their status — all without opening a terminal, reading a file, or making a technical decision. When something needs attention (a question, a bug, a decision), it appears as a card they can act on directly. When a build completes, they see the live app in the same window and can point at what to fix next.
 
 ## Design Tool
-*(Set per phase by /frontend)*
+external-pencil
 
 ## Master User Journey
 
