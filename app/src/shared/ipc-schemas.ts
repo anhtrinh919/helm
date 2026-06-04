@@ -119,6 +119,8 @@ export const FeedEvent = z.object({
   sessionId: z.string(),
   kind: FeedEventKind,
   text: z.string(),
+  /** Links a `decision_prompt` event to its question, or a `checkpoint` event to its card. */
+  refId: z.string().nullable(),
   createdAt: z.number(),
 })
 export type FeedEvent = z.infer<typeof FeedEvent>
@@ -171,6 +173,19 @@ export const ApproveCheckpointRequest = z.object({
 export const ReopenQuestionRequest = z.object({ sessionId: z.string(), questionId: z.string() })
 export const GetFeedRequest = z.object({ sessionId: z.string(), afterId: z.string().optional() })
 
+export const StartSessionRequest = z.object({ projectId: z.string(), cardId: z.string() })
+export const SteerRequest = z.object({
+  sessionId: z.string(),
+  mode: SteerMode,
+  text: z.string().min(1).max(2000),
+})
+export const AnswerDecisionRequest = z.object({
+  sessionId: z.string(),
+  questionId: z.string(),
+  answer: z.string().min(1).max(2000),
+})
+export const GetQuestionsRequest = z.object({ sessionId: z.string() })
+
 /* --------------------------- push payloads --------------------------- */
 
 export const FeedEventPush = z.object({ sessionId: z.string(), event: FeedEvent })
@@ -178,6 +193,9 @@ export type FeedEventPush = z.infer<typeof FeedEventPush>
 
 export const BoardUpdatePush = z.object({ projectId: z.string(), cardId: z.string(), card: Card })
 export type BoardUpdatePush = z.infer<typeof BoardUpdatePush>
+
+export const QuestionUpdatePush = z.object({ sessionId: z.string(), question: QuestionQueueItem })
+export type QuestionUpdatePush = z.infer<typeof QuestionUpdatePush>
 
 export const BackgroundStatusPush = z.object({
   projectId: z.string(),
@@ -210,8 +228,14 @@ export const CH = {
   cardsApproveCheckpoint: 'cards:approve-checkpoint',
   sessionsReopenQuestion: 'sessions:reopen-question',
   getFeed: 'sessions:get-feed',
+  // scoped session (Group 5)
+  sessionsStart: 'sessions:start',
+  sessionsSteer: 'sessions:steer',
+  sessionsAnswerDecision: 'sessions:answer-decision',
+  sessionsGetQuestions: 'sessions:get-questions',
   // pushes
   feedEvent: 'feed:event',
   boardUpdate: 'board:update',
   backgroundStatus: 'project:background-status',
+  questionUpdate: 'question:update',
 } as const

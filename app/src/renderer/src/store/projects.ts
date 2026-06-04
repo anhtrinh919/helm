@@ -6,6 +6,7 @@ export type View =
   | { name: 'front-door' }
   | { name: 'switcher' }
   | { name: 'board'; projectId: string }
+  | { name: 'session'; projectId: string; cardId: string }
 
 interface ProjectsState {
   projects: Project[]
@@ -15,6 +16,8 @@ interface ProjectsState {
   refresh: () => Promise<void>
   createFromIdea: (idea: string) => Promise<void>
   open: (projectId: string) => void
+  openSession: (projectId: string, cardId: string) => void
+  backToBoard: (projectId: string) => void
   newBuild: () => void
   backToSwitcher: () => void
   applyBackgroundStatus: (projectId: string, status: BackgroundStatus) => void
@@ -55,6 +58,8 @@ export const useProjects = create<ProjectsState>((set) => ({
   },
 
   open: (projectId) => set({ view: { name: 'board', projectId } }),
+  openSession: (projectId, cardId) => set({ view: { name: 'session', projectId, cardId } }),
+  backToBoard: (projectId) => set({ view: { name: 'board', projectId } }),
   newBuild: () => set({ view: { name: 'front-door' } }),
   backToSwitcher: () => set({ view: { name: 'switcher' } }),
 

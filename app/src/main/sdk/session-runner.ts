@@ -114,6 +114,8 @@ export interface SessionCallbacks {
 export interface SessionHandle {
   readonly id: string
   steer(mode: SteerMode, text: string): Promise<void>
+  /** Feed a plain user turn back in — used to resume after answering a decision. */
+  reply(text: string): void
   close(): Promise<void>
 }
 
@@ -162,6 +164,9 @@ export function startSession(opts: StartSessionOptions, cb: SessionCallbacks): S
       } else {
         input.push(`Take a closer look at this: ${text}`)
       }
+    },
+    reply(text: string): void {
+      input.push(text)
     },
     async close(): Promise<void> {
       try {

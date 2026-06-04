@@ -99,11 +99,15 @@ export function registerDataBridge(db: Db, getWindow: GetWindow): void {
   ipcMain.handle(CH.cardsApproveCheckpoint, (_e, raw: unknown) => {
     try {
       const { cardId, verdict, flagNote } = ApproveCheckpointRequest.parse(raw)
-      const card = updateCheckpoint(db, cardId, verdict, flagNote)
-      pushBoard(card.projectId, card)
+      let card = updateCheckpoint(db, cardId, verdict, flagNote)
       if (verdict === 'approved') {
+        // Approving a finished build completes the item and pulls the next one up.
+        if (card.status === 'building') card = updateCardStatus(db, cardId, 'done')
+        pushBoard(card.projectId, card)
         const promoted = promoteNextPlanned(db, card.projectId)
         if (promoted) pushBoard(card.projectId, promoted)
+      } else {
+        pushBoard(card.projectId, card)
       }
       return { card }
     } catch (e) {

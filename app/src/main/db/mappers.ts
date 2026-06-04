@@ -51,6 +51,7 @@ export interface FeedEventRow {
   kind: string
   text: string
   raw_payload: string | null
+  ref_id: string | null
   created_at: number
 }
 export interface QuestionRow {
@@ -123,6 +124,7 @@ export function toFeedEvent(row: FeedEventRow): FeedEvent {
     sessionId: row.session_id,
     kind: row.kind as FeedEvent['kind'],
     text: row.text,
+    refId: row.ref_id,
     createdAt: row.created_at,
   }
 }

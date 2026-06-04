@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Card, CardStatus } from '@shared/ipc-schemas'
 import { helm } from '../../bridge'
 import { useBoard } from '../../store/board'
+import { useProjects } from '../../store/projects'
 import { Confetti } from '../Confetti'
 import { Rail } from '../Rail'
 import { TopBar } from './TopBar'
@@ -26,6 +27,7 @@ const ORDER: CardStatus[] = ['building', 'failed', 'up_next', 'planned', 'done']
 /** The hero screen: the build-spine board for one project. */
 export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.Element {
   const { projectName, cards, loadBoard, addCard, applyUpdate } = useBoard()
+  const openSession = useProjects((s) => s.openSession)
   const [tab, setTab] = useState<BoardTab>('board')
   const [adding, setAdding] = useState(false)
 
@@ -152,8 +154,8 @@ export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.El
                               : 'row'
                         }
                         depLabel={status === 'up_next' || status === 'planned' ? depLabel(c) : undefined}
-                        onOpen={() => {}}
-                        onRetry={() => {}}
+                        onOpen={(id) => openSession(projectId, id)}
+                        onRetry={(id) => openSession(projectId, id)}
                       />
                     ))}
                   </section>

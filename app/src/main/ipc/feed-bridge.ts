@@ -37,6 +37,7 @@ export function registerFeedBridge(getWindow: GetWindow): void {
             sessionId: handle.id,
             kind: 'error',
             text: message,
+            refId: null,
             createdAt: Date.now(),
           })
         },

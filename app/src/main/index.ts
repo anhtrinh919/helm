@@ -4,6 +4,8 @@ import { openDatabase, type Db } from './db/connection'
 import { recoverActiveSessions } from './db/sessions'
 import { registerFeedBridge } from './ipc/feed-bridge'
 import { registerDataBridge } from './ipc/data-bridge'
+import { registerSessionBridge } from './ipc/session-bridge'
+import { SessionOrchestrator } from './sdk/session-orchestrator'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -35,8 +37,10 @@ void app.whenReady().then(() => {
   recoverActiveSessions(db, Date.now())
 
   const getWindow = (): BrowserWindow | null => mainWindow
+  const orchestrator = new SessionOrchestrator(db, getWindow)
   registerFeedBridge(getWindow)
   registerDataBridge(db, getWindow)
+  registerSessionBridge(db, orchestrator)
 
   createWindow()
   app.on('activate', () => {

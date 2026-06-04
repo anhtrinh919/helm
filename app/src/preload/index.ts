@@ -16,6 +16,11 @@ const api: HelmApi = {
       ipcRenderer.invoke(CH.cardsApproveCheckpoint, { cardId, verdict, flagNote }),
   },
   sessions: {
+    start: (projectId, cardId) => ipcRenderer.invoke(CH.sessionsStart, { projectId, cardId }),
+    steer: (sessionId, mode, text) => ipcRenderer.invoke(CH.sessionsSteer, { sessionId, mode, text }),
+    answerDecision: (sessionId, questionId, answer) =>
+      ipcRenderer.invoke(CH.sessionsAnswerDecision, { sessionId, questionId, answer }),
+    getQuestions: (sessionId) => ipcRenderer.invoke(CH.sessionsGetQuestions, { sessionId }),
     reopenQuestion: (sessionId, questionId) =>
       ipcRenderer.invoke(CH.sessionsReopenQuestion, { sessionId, questionId }),
   },
@@ -23,6 +28,7 @@ const api: HelmApi = {
     onBoardUpdate: (cb) => subscribe(CH.boardUpdate, cb),
     onBackgroundStatus: (cb) => subscribe(CH.backgroundStatus, cb),
     onFeedEvent: (cb) => subscribe(CH.feedEvent, cb),
+    onQuestionUpdate: (cb) => subscribe(CH.questionUpdate, cb),
   },
   startProbe: (prompt) => ipcRenderer.invoke(CH.startProbe, { prompt }),
   getFeed: (sessionId) => ipcRenderer.invoke(CH.getFeed, { sessionId }),

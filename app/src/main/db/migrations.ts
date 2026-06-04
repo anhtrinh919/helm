@@ -74,6 +74,10 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_question_session ON question_queue(session_id, position);
     `)
   },
+  // 2 — feed events reference the question/card they're about (Group 5)
+  (db) => {
+    db.exec(`ALTER TABLE feed_events ADD COLUMN ref_id TEXT;`)
+  },
 ]
 
 export function migrate(db: Database.Database): void {

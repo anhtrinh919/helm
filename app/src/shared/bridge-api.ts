@@ -7,6 +7,9 @@ import type {
   FeedEventPush,
   Project,
   QuestionQueueItem,
+  QuestionUpdatePush,
+  Session,
+  SteerMode,
   Result,
 } from './ipc-schemas'
 
@@ -31,6 +34,17 @@ export interface HelmApi {
     ): Promise<Result<{ card: Card }>>
   }
   sessions: {
+    /** Open (or resume) the scoped session for a card. Starts a live SDK build. */
+    start(projectId: string, cardId: string): Promise<Result<{ session: Session }>>
+    /** Steer a running session: interrupt, redirect, or look closer. */
+    steer(sessionId: string, mode: SteerMode, text: string): Promise<Result<{ ok: true }>>
+    /** Answer a pending decision; resumes the paused session. */
+    answerDecision(
+      sessionId: string,
+      questionId: string,
+      answer: string,
+    ): Promise<Result<{ question: QuestionQueueItem }>>
+    getQuestions(sessionId: string): Promise<Result<{ questions: QuestionQueueItem[] }>>
     reopenQuestion(
       sessionId: string,
       questionId: string,
@@ -40,6 +54,7 @@ export interface HelmApi {
     onBoardUpdate(cb: (p: BoardUpdatePush) => void): () => void
     onBackgroundStatus(cb: (p: BackgroundStatusPush) => void): () => void
     onFeedEvent(cb: (p: FeedEventPush) => void): () => void
+    onQuestionUpdate(cb: (p: QuestionUpdatePush) => void): () => void
   }
   /** Group 1 probe — dev smoke test of the live engine. */
   startProbe(prompt: string): Promise<Result<{ sessionId: string }>>

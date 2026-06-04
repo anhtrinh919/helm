@@ -147,6 +147,7 @@ describe('feed events', () => {
       sessionId: s.id,
       kind: 'narration',
       text: `line ${i}`,
+      refId: null,
       createdAt: 1000 + i,
     })
     appendEvent(db, mk(1))

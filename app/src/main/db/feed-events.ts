@@ -9,9 +9,17 @@ export function appendEvent(
   rawPayload?: string | null,
 ): FeedEvent {
   db.prepare(
-    `INSERT INTO feed_events (id, session_id, kind, text, raw_payload, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(event.id, event.sessionId, event.kind, event.text, rawPayload ?? null, event.createdAt)
+    `INSERT INTO feed_events (id, session_id, kind, text, raw_payload, ref_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    event.id,
+    event.sessionId,
+    event.kind,
+    event.text,
+    rawPayload ?? null,
+    event.refId ?? null,
+    event.createdAt,
+  )
   return event
 }
 

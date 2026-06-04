@@ -35,8 +35,8 @@ function friendlyError(code: string): string {
   return ERROR_TEXT[code] ?? 'Something went wrong while building this — let’s try again.'
 }
 
-function mk(sessionId: string, kind: FeedEventKind, text: string): FeedEvent {
-  return { id: randomUUID(), sessionId, kind, text, createdAt: Date.now() }
+function mk(sessionId: string, kind: FeedEventKind, text: string, refId: string | null = null): FeedEvent {
+  return { id: randomUUID(), sessionId, kind, text, refId, createdAt: Date.now() }
 }
 
 type Block = { type: string; text?: string; name?: string }
