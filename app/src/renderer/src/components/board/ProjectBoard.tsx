@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Card, CardStatus } from '@shared/ipc-schemas'
+import { isIpcError, type Card, type CardStatus } from '@shared/ipc-schemas'
 import { helm } from '../../bridge'
 import { useBoard } from '../../store/board'
 import { useProjects } from '../../store/projects'
@@ -13,6 +13,7 @@ import { SpineItem } from './SpineItem'
 import { NeedsYouHeadline } from './NeedsYouHeadline'
 import { AddItemModal } from './AddItemModal'
 import { PointModeToggle } from './PointModeOverlay'
+import { FixCommentCard } from './FixCommentCard'
 
 /** Pull "N of M" out of a "Step N of M: ..." label for the in-flight eyebrow. */
 function stepOfM(card: Card | null, total: number, doneCount: number): string {
@@ -24,7 +25,9 @@ function stepOfM(card: Card | null, total: number, doneCount: number): string {
   return `${doneCount} OF ${total} DONE · READY`
 }
 
-const ORDER: CardStatus[] = ['building', 'failed', 'up_next', 'planned', 'done']
+// Board order (F50): BUILDING NOW → OFF-TRACK → NEEDS YOU → REPORTED → UP NEXT → PLANNED → DONE.
+const ORDER_TOP: CardStatus[] = ['building', 'failed']
+const ORDER_BOTTOM: CardStatus[] = ['up_next', 'planned', 'done']
 
 /** The hero screen: the build-spine board for one project. */
 export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.Element {
@@ -32,6 +35,8 @@ export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.El
   const openSession = useProjects((s) => s.openSession)
   const [tab, setTab] = useState<BoardTab>('board')
   const [adding, setAdding] = useState(false)
+  // Cards waiting behind the running fix (in-memory display state — resets on relaunch).
+  const [queuedFixes, setQueuedFixes] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     void loadBoard(projectId)
@@ -39,6 +44,10 @@ export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.El
       if (p.projectId === projectId) applyUpdate(p.card)
     })
   }, [projectId, loadBoard, applyUpdate])
+
+  // Fix-comment cards live on their own REPORTED shelf (all statuses, F50–F55);
+  // they never mix into the build-spine sections.
+  const reported = useMemo(() => cards.filter((c) => c.type === 'fix_comment'), [cards])
 
   const groups = useMemo(() => {
     const by: Record<CardStatus, Card[]> = {
@@ -50,9 +59,30 @@ export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.El
       done: [],
       waiting: [],
     }
-    for (const c of cards) by[c.status].push(c)
+    for (const c of cards) {
+      if (c.type === 'fix_comment') continue
+      by[c.status].push(c)
+    }
     return by
   }, [cards])
+
+  // A queued card leaves the local queue the moment its fix actually starts.
+  useEffect(() => {
+    setQueuedFixes((prev) => {
+      const next = new Set([...prev].filter((id) => cards.find((c) => c.id === id)?.status === 'waiting'))
+      return next.size === prev.size ? prev : next
+    })
+  }, [cards])
+
+  const startFix = async (cardId: string): Promise<void> => {
+    const res = await helm.fixSessions.start(projectId, cardId)
+    if (isIpcError(res)) return
+    if (res.queued) {
+      setQueuedFixes((prev) => new Set(prev).add(cardId))
+    } else {
+      openSession(projectId, cardId)
+    }
+  }
 
   const titleOf = useMemo(() => {
     const m = new Map<string, string>()
@@ -143,33 +173,67 @@ export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.El
                 </div>
               )}
 
-              {ORDER.map((status) => {
-                const items = groups[status]
-                if (items.length === 0) return null
-                const meta = SECTION_META[status]
-                if (!meta) return null
+              {(() => {
+                const renderSection = (status: CardStatus): React.JSX.Element | null => {
+                  const items = groups[status]
+                  if (items.length === 0) return null
+                  const meta = SECTION_META[status]
+                  if (!meta) return null
+                  return (
+                    <section key={status} className="flex flex-col gap-2.5">
+                      <SectionHeader label={meta.label} count={items.length} pill={meta.pill} />
+                      {items.map((c) => (
+                        <SpineItem
+                          key={c.id}
+                          card={c}
+                          mode={
+                            status === 'building'
+                              ? 'spotlight'
+                              : status === 'done'
+                                ? 'condensed'
+                                : 'row'
+                          }
+                          depLabel={status === 'up_next' || status === 'planned' ? depLabel(c) : undefined}
+                          onOpen={(id) => openSession(projectId, id)}
+                          onRetry={(id) => openSession(projectId, id)}
+                        />
+                      ))}
+                    </section>
+                  )
+                }
                 return (
-                  <section key={status} className="flex flex-col gap-2.5">
-                    <SectionHeader label={meta.label} count={items.length} pill={meta.pill} />
-                    {items.map((c) => (
-                      <SpineItem
-                        key={c.id}
-                        card={c}
-                        mode={
-                          status === 'building'
-                            ? 'spotlight'
-                            : status === 'done'
-                              ? 'condensed'
-                              : 'row'
-                        }
-                        depLabel={status === 'up_next' || status === 'planned' ? depLabel(c) : undefined}
-                        onOpen={(id) => openSession(projectId, id)}
-                        onRetry={(id) => openSession(projectId, id)}
-                      />
-                    ))}
-                  </section>
+                  <>
+                    {ORDER_TOP.map(renderSection)}
+
+                    {/* REPORTED shelf (F50–F55) — collapses entirely when empty. */}
+                    {reported.length > 0 && (
+                      <section className="flex flex-col gap-2.5 rounded-[16px] brut-2 bg-pinksoft/60 p-3.5">
+                        <div className="flex items-baseline gap-2.5">
+                          <SectionHeader
+                            label="REPORTED"
+                            count={reported.length}
+                            pill="bg-pinksoft"
+                          />
+                          <span className="text-[11px] text-soft">
+                            things you pointed at in the live app
+                          </span>
+                        </div>
+                        {reported.map((c) => (
+                          <FixCommentCard
+                            key={c.id}
+                            card={c}
+                            queued={queuedFixes.has(c.id)}
+                            onStartFix={(id) => void startFix(id)}
+                            onOpen={(id) => openSession(projectId, id)}
+                          />
+                        ))}
+                      </section>
+                    )}
+
+                    {ORDER_BOTTOM.map(renderSection)}
+                  </>
                 )
-              })}
+              })()}
             </div>
           )}
         </main>
