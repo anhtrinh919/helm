@@ -1,5 +1,6 @@
 import type {
   BackgroundStatus,
+  BuildStep,
   Card,
   Checkpoint,
   DecisionPrompt,
@@ -18,6 +19,18 @@ export interface ProjectRow {
   updated_at: number
   plan: string | null
   status: string
+  artifact_dir: string | null
+  dev_pid: number | null
+}
+export interface BuildStepRow {
+  id: string
+  project_id: string
+  session_id: string
+  card_id: string
+  status: string
+  started_at: number
+  completed_at: number | null
+  dev_url: string | null
 }
 export interface CardRow {
   id: string
@@ -83,6 +96,20 @@ export function toProject(row: ProjectRow, backgroundStatus: BackgroundStatus): 
     plan: parse<PlanBlock[] | null>(row.plan, null),
     status: row.status as Project['status'],
     backgroundStatus,
+    artifactDir: row.artifact_dir ?? null,
+  }
+}
+
+export function toBuildStep(row: BuildStepRow): BuildStep {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    sessionId: row.session_id,
+    cardId: row.card_id,
+    status: row.status as BuildStep['status'],
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    devUrl: row.dev_url,
   }
 }
 

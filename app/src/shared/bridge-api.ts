@@ -6,6 +6,8 @@ import type {
   FeedEvent,
   FeedEventPush,
   PlanBlock,
+  PreviewState,
+  PreviewUpdatePush,
   Project,
   QuestionQueueItem,
   QuestionUpdatePush,
@@ -64,11 +66,21 @@ export interface HelmApi {
       plan: PlanBlock[],
     ): Promise<Result<{ project: Project; cards: Card[] }>>
   }
+  /** Live Preview (Phase 2): query state + control the project's dev server. */
+  preview: {
+    /** Current preview state for a project (e.g. on tab open / app resume). */
+    getState(projectId: string): Promise<Result<{ state: PreviewState }>>
+    /** Start (or report already-running) the project's dev server; returns the live URL. */
+    startServer(projectId: string): Promise<Result<{ url: string }>>
+    /** Stop the project's dev server. */
+    stopServer(projectId: string): Promise<Result<{ stopped: true }>>
+  }
   events: {
     onBoardUpdate(cb: (p: BoardUpdatePush) => void): () => void
     onBackgroundStatus(cb: (p: BackgroundStatusPush) => void): () => void
     onFeedEvent(cb: (p: FeedEventPush) => void): () => void
     onQuestionUpdate(cb: (p: QuestionUpdatePush) => void): () => void
+    onPreviewUpdate(cb: (p: PreviewUpdatePush) => void): () => void
   }
   /** Group 1 probe — dev smoke test of the live engine. */
   startProbe(prompt: string): Promise<Result<{ sessionId: string }>>

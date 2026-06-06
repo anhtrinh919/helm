@@ -141,7 +141,7 @@ export function ScopedSession({
                 <div className="mt-5">
                   <CheckpointBlock
                     card={card}
-                    onApprove={() => void approveCheckpoint('approved')}
+                    onApprove={() => void approveCheckpoint('approved').then(onBack)}
                     onFlag={(note) => void approveCheckpoint('flagged', note)}
                   />
                 </div>

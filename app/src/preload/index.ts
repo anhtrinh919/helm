@@ -30,11 +30,17 @@ const api: HelmApi = {
     approvePlan: (projectId, name, plan) =>
       ipcRenderer.invoke(CH.wizardApprove, { projectId, name, plan }),
   },
+  preview: {
+    getState: (projectId) => ipcRenderer.invoke(CH.previewGetState, { projectId }),
+    startServer: (projectId) => ipcRenderer.invoke(CH.devserverStart, { projectId }),
+    stopServer: (projectId) => ipcRenderer.invoke(CH.devserverStop, { projectId }),
+  },
   events: {
     onBoardUpdate: (cb) => subscribe(CH.boardUpdate, cb),
     onBackgroundStatus: (cb) => subscribe(CH.backgroundStatus, cb),
     onFeedEvent: (cb) => subscribe(CH.feedEvent, cb),
     onQuestionUpdate: (cb) => subscribe(CH.questionUpdate, cb),
+    onPreviewUpdate: (cb) => subscribe(CH.previewUpdate, cb),
   },
   startProbe: (prompt) => ipcRenderer.invoke(CH.startProbe, { prompt }),
   getFeed: (sessionId) => ipcRenderer.invoke(CH.getFeed, { sessionId }),

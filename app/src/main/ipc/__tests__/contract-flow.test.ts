@@ -18,11 +18,23 @@ vi.mock('electron', () => ({
 import { openDatabase, type Db } from '../../db/connection'
 import { SessionOrchestrator } from '../../sdk/session-orchestrator'
 import { WizardOrchestrator } from '../../sdk/wizard-orchestrator'
+import { DevServerManager, type DevServerDeps } from '../../sdk/dev-server-manager'
+import { setArtifactDir } from '../../db/projects'
 import { registerFeedBridge } from '../feed-bridge'
 import { registerDataBridge } from '../data-bridge'
 import { registerSessionBridge } from '../session-bridge'
 import { registerWizardBridge } from '../wizard-bridge'
+import { registerPreviewBridge } from '../preview-bridge'
 import { CH } from '../../../shared/ipc-schemas'
+
+function fakePreviewDeps(): DevServerDeps {
+  return {
+    readManifest: () => ({ startCommand: 'npm run dev', port: 3000 }),
+    spawnServer: (_c, m) => ({ pid: 7, url: `http://localhost:${m.port}`, kill: () => {}, onExit: () => {} }),
+    probe: async () => true,
+    pidAlive: () => true,
+  }
+}
 
 function fakeRunner(_o: StartSessionOptions, _cb: SessionCallbacks): SessionHandle {
   return { id: 'fake', steer: async () => {}, reply: () => {}, close: async () => {} }
@@ -30,13 +42,16 @@ function fakeRunner(_o: StartSessionOptions, _cb: SessionCallbacks): SessionHand
 const call = async (ch: string, payload?: unknown): Promise<any> => handlers.get(ch)!({}, payload)
 
 let db: Db
+let previewServer: DevServerManager
 beforeEach(() => {
   handlers.clear()
   db = openDatabase(':memory:')
+  previewServer = new DevServerManager(db, () => {}, fakePreviewDeps(), '/tmp/helm-contract')
   registerFeedBridge(db, () => null)
   registerDataBridge(db, () => null)
   registerSessionBridge(db, new SessionOrchestrator(db, () => null, fakeRunner))
   registerWizardBridge(db, new WizardOrchestrator(db, fakeRunner), () => null)
+  registerPreviewBridge(db, previewServer)
 })
 
 describe('IPC contract flow (Stage 4 integration)', () => {
@@ -120,5 +135,44 @@ describe('IPC contract flow (Stage 4 integration)', () => {
     const feed = await call(CH.getFeed, { sessionId: session.id })
     expect(feed).toHaveProperty('events')
     expect(Array.isArray(feed.events)).toBe(true)
+  })
+
+  /* ---- Phase 2: preview / dev-server contracts ---- */
+
+  it('preview:get-state returns none for a fresh project, not_found for a missing one', async () => {
+    const { project } = await call(CH.projectsCreate, { name: 'p' })
+    expect(await call(CH.previewGetState, { projectId: project.id })).toEqual({ state: { status: 'none' } })
+    expect(await call(CH.previewGetState, { projectId: 'nope' })).toEqual({ error: 'not_found' })
+  })
+
+  it('devserver:start returns no_artifact before a build, the url after, already_running on a repeat', async () => {
+    const { project } = await call(CH.projectsCreate, { name: 'p' })
+    // No artifact yet → no_artifact
+    expect(await call(CH.devserverStart, { projectId: project.id })).toEqual({ error: 'no_artifact' })
+    // Simulate a completed build having produced a working dir + manifest
+    setArtifactDir(db, project.id, '/work/p')
+    expect(await call(CH.devserverStart, { projectId: project.id })).toEqual({ url: 'http://localhost:3000' })
+    // Second start while running → already_running, carrying the existing URL
+    expect(await call(CH.devserverStart, { projectId: project.id })).toEqual({
+      error: 'already_running',
+      url: 'http://localhost:3000',
+    })
+    // And the preview state is now live
+    expect(await call(CH.previewGetState, { projectId: project.id })).toEqual({
+      state: { status: 'live', url: 'http://localhost:3000' },
+    })
+  })
+
+  it('devserver:stop returns not_running when nothing is up, then stops a running server', async () => {
+    const { project } = await call(CH.projectsCreate, { name: 'p' })
+    setArtifactDir(db, project.id, '/work/p')
+    expect(await call(CH.devserverStop, { projectId: project.id })).toEqual({ error: 'not_running' })
+    await call(CH.devserverStart, { projectId: project.id })
+    expect(await call(CH.devserverStop, { projectId: project.id })).toEqual({ stopped: true })
+    expect(await call(CH.previewGetState, { projectId: project.id })).toEqual({ state: { status: 'none' } })
+  })
+
+  it('devserver:start on a missing project returns not_found', async () => {
+    expect(await call(CH.devserverStart, { projectId: 'nope' })).toEqual({ error: 'not_found' })
   })
 })

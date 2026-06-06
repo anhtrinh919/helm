@@ -34,3 +34,33 @@ export class SpotlightOccupiedError extends Error {
 export class NotAwaitingDecisionError extends Error {
   readonly code = 'not_awaiting_decision' as const
 }
+
+/* ---- Phase 2: dev-server / preview errors ---- */
+
+/** No runnable artifact exists yet (build hasn't produced a helm.json / app). */
+export class NoArtifactError extends Error {
+  readonly code = 'no_artifact' as const
+}
+
+/** The dev server is already running — carries the existing URL. */
+export class AlreadyRunningError extends Error {
+  readonly code = 'already_running' as const
+  constructor(readonly url: string) {
+    super('dev server already running')
+  }
+}
+
+/** The dev server process failed to start or never bound in time. */
+export class StartFailedError extends Error {
+  readonly code = 'start_failed' as const
+}
+
+/** Asked to stop a dev server that isn't running. */
+export class DevServerNotRunningError extends Error {
+  readonly code = 'not_running' as const
+}
+
+/** Could not create the project's on-disk working directory (real pipeline). */
+export class ArtifactDirError extends Error {
+  readonly code = 'artifact_dir_failed' as const
+}

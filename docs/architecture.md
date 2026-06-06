@@ -21,8 +21,10 @@
 ┌─────────────────────────────────────────────────────────┐
 │  Renderer (React + Zustand)                             │
 │  board.ts · feed.ts · projects.ts · wizard.ts stores   │
+│  preview.ts store (Phase 2 — PreviewState per project) │
 │  Components: FrontDoor, Rail, ProjectSwitcher,          │
-│              Board, SessionFeed, Wizard                 │
+│              Board, SessionFeed, Wizard,                │
+│              LivePreview (<webview> + state overlays)   │
 └───────────────────┬─────────────────────────────────────┘
                     │ contextBridge (Zod-validated IPC)
                     │ ipc-schemas.ts ← single source of truth
@@ -33,27 +35,35 @@
 │  ├── data-bridge.ts      (projects, cards, sessions)   │
 │  ├── feed-bridge.ts      (feed events, questions)      │
 │  ├── session-bridge.ts   (start, steer, answer)        │
-│  └── wizard-bridge.ts    (scoping, approve)            │
+│  ├── wizard-bridge.ts    (scoping, approve)            │
+│  └── preview-bridge.ts   (preview:get-state,           │
+│                            devserver:start/stop)        │
 │                                                         │
 │  SDK layer                                              │
 │  ├── session-runner.ts   (wraps SDK query(), streams)  │
 │  ├── session-orchestrator.ts  (smart-pausing, steer)   │
 │  ├── wizard-orchestrator.ts   (scoping Q&A loop)       │
 │  ├── event-transformer.ts     (HARD GATE — strips code)│
-│  └── json-extract.ts          (structured data from LLM│
+│  ├── json-extract.ts          (structured data from LLM│
+│  └── dev-server-manager.ts    (Phase 2 — child-process │
+│                                 lifecycle; PID registry;│
+│                                 start/stop/restart)     │
 │                                                         │
 │  DB layer                                               │
 │  ├── connection.ts       (better-sqlite3, migrations)  │
-│  ├── migrations.ts       (schema v1)                   │
-│  ├── projects.ts         (CRUD)                        │
+│  ├── migrations.ts       (schema v1, v2, v3)           │
+│  ├── projects.ts         (CRUD + artifact_dir/dev_pid) │
 │  ├── cards.ts            (CRUD + status transitions)   │
 │  ├── sessions.ts         (CRUD + feed events)          │
 │  ├── feed-events.ts      (append + backfill)           │
 │  ├── question-queue.ts   (enqueue + answer)            │
+│  ├── build-steps.ts      (Phase 2 — running/complete/  │
+│  │                         failed/snag per session)    │
 │  └── mappers.ts          (DB row → IPC-safe shape)     │
 └─────────────────────────────────────────────────────────┘
               │
               │ SDK calls (pathToClaudeCodeExecutable required)
+              │ + real tools (Bash, Write, Edit) → artifact_dir
               ▼
     @anthropic-ai/claude-agent-sdk
     (bring-your-own Claude subscription)
@@ -96,6 +106,20 @@ question_queue (id TEXT PK, session_id TEXT FK, prompt JSON,
                 created_at INTEGER, answered_at INTEGER)
 ```
 
+### Build Steps (Phase 2)
+```
+build_steps (id TEXT PK, project_id TEXT FK, session_id TEXT FK,
+             card_id TEXT FK, status TEXT,  -- 'running'|'complete'|'failed'|'snag'
+             started_at INTEGER, completed_at INTEGER, dev_url TEXT)
+```
+
+### Projects (Phase 2 additions)
+Two new columns added via migration 3:
+```
+projects.artifact_dir TEXT  -- absolute path to per-project working directory (null until first build)
+projects.dev_pid      INTEGER  -- PID of running dev server child process (null when not running)
+```
+
 ## Key Components
 
 ### Renderer
@@ -108,6 +132,7 @@ question_queue (id TEXT PK, session_id TEXT FK, prompt JSON,
 | `board/` | Build-spine board — columns (planned, up_next, building, done), card rendering |
 | `session/` | Session feed panel — live narration stream, decision cards, checkpoint review |
 | `wizard/` | New Project Wizard — multi-step scoping conversation to a plan |
+| `preview/` | Live Preview tab — `<webview>` embed + five-state overlay (none/building/live/snag/blocked) |
 
 ### Main Process
 
@@ -118,3 +143,4 @@ question_queue (id TEXT PK, session_id TEXT FK, prompt JSON,
 | `wizard-orchestrator.ts` | Drives scoping Q&A: prompt → stream → extract question or plan → reply to IPC |
 | `session-runner.ts` | Thin SDK wrapper: calls `query()` with correct `pathToClaudeCodeExecutable`, streams events |
 | `json-extract.ts` | Extracts first valid JSON object from LLM streaming text |
+| `dev-server-manager.ts` | Singleton — owns dev server child-process lifecycle; start/stop/restart; PID registry; pushes `preview:update` on state changes |

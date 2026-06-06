@@ -4,6 +4,8 @@ import type { Card, FeedEvent, Session, SteerMode } from '../../shared/ipc-schem
 import { CH } from '../../shared/ipc-schemas'
 import type { Db } from '../db/connection'
 import { deriveBackgroundStatus } from '../db/projects'
+import { completeBuildStep, createBuildStep, failBuildStep } from '../db/build-steps'
+import type { DevServerManager } from './dev-server-manager'
 import {
   findBuildingCard,
   getCard,
@@ -11,7 +13,7 @@ import {
   setPendingCheckpoint,
   updateCardStatus,
 } from '../db/cards'
-import { NotAwaitingDecisionError, SpotlightOccupiedError } from '../db/errors'
+import { ArtifactDirError, NotAwaitingDecisionError, SpotlightOccupiedError } from '../db/errors'
 import {
   createSession,
   getSession,
@@ -44,11 +46,20 @@ export class SessionOrchestrator {
   private finalized = new Set<string>()
   /** Sessions the user deliberately stopped — their close/error is a clean halt, not a failure. */
   private interrupted = new Set<string>()
+  /** Real-pipeline sessions → their build_step id (for completion / failure marking). */
+  private buildStepBySession = new Map<string, string>()
 
   constructor(
     private db: Db,
     private getWindow: GetWindow,
     private runner: Runner = startSession,
+    /**
+     * When present, sessions run the REAL pipeline: real working dir, full
+     * tools, build steps, and a managed dev server feeding the Live Preview.
+     * When absent (Phase-1-style / unit tests), sessions stay narration-only
+     * (text, sandboxed tmpdir, no tools) — the original behavior is preserved.
+     */
+    private devServer?: DevServerManager,
   ) {}
 
   private send(channel: string, payload: unknown): void {
@@ -72,20 +83,37 @@ export class SessionOrchestrator {
     })
   }
 
-  /** A short, plain-language instruction for the engine. Text-only in Phase 1. */
-  private buildPrompt(card: Card): string {
+  /** A short, plain-language instruction for the engine.
+   *  `real` = the Phase 2 pipeline (writes a real app + a helm.json manifest);
+   *  otherwise the Phase 1 narration-only proof. */
+  private buildPrompt(card: Card, real: boolean): string {
     const what = card.stepLabel ? card.stepLabel.replace(/^Step \d+ of \d+:\s*/, '') : card.title
-    return [
-      `You are building one piece of a software product for a non-technical person: "${what}".`,
+    const shared = [
       `Narrate your progress in short, friendly, plain-English lines — one sentence per step,`,
-      `as if updating a teammate who can't read code. Do not show code, file paths, or commands.`,
+      `as if updating a teammate who can't read code. NEVER show code, file paths, commands, or URLs.`,
       `Make routine technical choices silently — only the kind a non-developer would never care about.`,
       `When you hit a GENUINE fork that changes what the product does or how it feels`,
       `(a feature direction, a design choice, user-facing wording), STOP and ask — emit exactly one`,
       `JSON object on its own line. Prefer giving 2-4 concrete choices as buttons:`,
       `{"decision":{"question":"<plain-English question>","options":["<choice>","<choice>"]}}.`,
       `Only omit "options" when the answer truly needs their own words. Nothing else on that line.`,
-      `Otherwise keep narrating. Say when the first pass is ready.`,
+    ]
+    if (!real) {
+      return [
+        `You are building one piece of a software product for a non-technical person: "${what}".`,
+        ...shared,
+        `Otherwise keep narrating. Say when the first pass is ready.`,
+      ].join(' ')
+    }
+    return [
+      `You are building a real, runnable piece of a web app for a non-technical person: "${what}".`,
+      `Write actual files into the current working directory to build it as a full-stack web app`,
+      `(a real screen plus any backend and local data it needs) that runs locally with ONE dev command.`,
+      `When the first runnable version is ready, ensure a file named "helm.json" exists in the working`,
+      `directory containing exactly {"startCommand":"<dev command, e.g. npm run dev>","port":<port number it serves on>}.`,
+      `Pick a port in the 3000-5999 range that is unlikely to clash.`,
+      ...shared,
+      `Otherwise keep narrating. Say plainly when the first runnable version is ready.`,
     ].join(' ')
   }
 
@@ -112,8 +140,31 @@ export class SessionOrchestrator {
     this.pushBoard(building)
     this.pushBackground(projectId)
 
+    // Phase 2 real pipeline: real working dir + full tools + a managed dev
+    // server. Without a DevServerManager we keep the Phase 1 narration-only path
+    // (sandboxed tmpdir, no tools) so existing behavior is preserved.
+    const real = !!this.devServer
+    let cwd = tmpdir()
+    let allowedTools: string[] | undefined = []
+    if (real && this.devServer) {
+      try {
+        cwd = this.devServer.ensureArtifactDir(projectId)
+      } catch (e) {
+        throw new ArtifactDirError(e instanceof Error ? e.message : 'could not create working directory')
+      }
+      allowedTools = undefined // all tools enabled
+      const step = createBuildStep(this.db, projectId, session.id, cardId)
+      this.buildStepBySession.set(session.id, step.id)
+      this.devServer.markBuilding(projectId)
+    }
+
     const handle = this.runner(
-      { prompt: this.buildPrompt(card), cwd: tmpdir(), permissionMode: 'default', allowedTools: [] },
+      {
+        prompt: this.buildPrompt(card, real),
+        cwd,
+        permissionMode: real ? 'bypassPermissions' : 'default',
+        allowedTools,
+      },
       {
         onMessage: (msg) => {
           const raw = JSON.stringify(msg)
@@ -239,6 +290,33 @@ export class SessionOrchestrator {
     this.handles.delete(sessionId)
 
     updateSessionStatus(this.db, sessionId, 'done')
+
+    // Real pipeline: complete the build step, then bring the dev server up. The
+    // reviewable checkpoint waits until the running app is live (or the manager
+    // reports it blocked) — the user reviews the running app, not a blank pane.
+    const buildStepId = this.buildStepBySession.get(sessionId)
+    if (this.devServer && buildStepId) {
+      this.buildStepBySession.delete(sessionId)
+      completeBuildStep(this.db, buildStepId, null)
+      void this.devServer
+        .restart(projectId)
+        .then((url) => {
+          completeBuildStep(this.db, buildStepId, url)
+          this.emitCheckpoint(sessionId, projectId, cardId)
+        })
+        .catch(() => {
+          // Dev server couldn't come up — preview is 'blocked'. Still let the
+          // user review/act on what was built.
+          this.emitCheckpoint(sessionId, projectId, cardId)
+        })
+      return
+    }
+
+    this.emitCheckpoint(sessionId, projectId, cardId)
+  }
+
+  /** Move the card to its reviewable checkpoint and tell the renderer. */
+  private emitCheckpoint(sessionId: string, projectId: string, cardId: string): void {
     const card = setPendingCheckpoint(this.db, cardId)
     this.pushBoard(card)
     this.emit(
@@ -254,6 +332,16 @@ export class SessionOrchestrator {
     this.handles.delete(sessionId)
 
     updateSessionStatus(this.db, sessionId, 'error')
+
+    // Real pipeline: mark the build step failed and let the preview show a snag /
+    // blocked state (the dev server can't be brought up around a failed build).
+    const buildStepId = this.buildStepBySession.get(sessionId)
+    if (this.devServer && buildStepId) {
+      this.buildStepBySession.delete(sessionId)
+      failBuildStep(this.db, buildStepId)
+      void this.devServer.handleCrash(projectId)
+    }
+
     this.emit(makeFeedEvent(sessionId, 'error', message))
     try {
       this.pushBoard(updateCardStatus(this.db, cardId, 'failed'))

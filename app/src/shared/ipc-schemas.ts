@@ -50,6 +50,16 @@ export type CheckpointStatus = z.infer<typeof CheckpointStatus>
 export const DecisionPromptType = z.enum(['buttons', 'freetext', 'plan_approval'])
 export type DecisionPromptType = z.infer<typeof DecisionPromptType>
 
+/** A real build step's OUTCOME (Phase 2 — the real-file pipeline). This is an
+ *  audit record of the build, NOT a mirror of the live preview: snag/blocked are
+ *  dev-server runtime states owned solely by DevServerManager, never persisted here. */
+export const BuildStepStatus = z.enum(['running', 'complete', 'failed'])
+export type BuildStepStatus = z.infer<typeof BuildStepStatus>
+
+/** What the Live Preview pane is showing for a project. */
+export const PreviewStatus = z.enum(['none', 'building', 'live', 'snag', 'blocked'])
+export type PreviewStatus = z.infer<typeof PreviewStatus>
+
 /* --------------------------- domain types --------------------------- */
 
 export const PlanBlock = z.object({
@@ -82,6 +92,9 @@ export const Project = z.object({
   plan: z.array(PlanBlock).nullable(),
   status: ProjectStatus,
   backgroundStatus: BackgroundStatus,
+  /** Absolute path to the project's on-disk working dir. Internal only —
+   *  never displayed to the user. Null until the first real build session. */
+  artifactDir: z.string().nullable(),
 })
 export type Project = z.infer<typeof Project>
 
@@ -114,6 +127,33 @@ export const Session = z.object({
   resumedAt: z.number().nullable(),
 })
 export type Session = z.infer<typeof Session>
+
+export const BuildStep = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  sessionId: z.string(),
+  cardId: z.string(),
+  status: BuildStepStatus,
+  startedAt: z.number(),
+  completedAt: z.number().nullable(),
+  /** Local dev-server URL once the step's app is running; null otherwise. Internal only. */
+  devUrl: z.string().nullable(),
+})
+export type BuildStep = z.infer<typeof BuildStep>
+
+/**
+ * The Live Preview state for a project. A discriminated union — `live` carries
+ * the local dev-server URL (used only to point the embedded webview; never
+ * shown to the user as text). Mirrors requirements.md API Contracts.
+ */
+export const PreviewState = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('none') }),
+  z.object({ status: z.literal('building') }),
+  z.object({ status: z.literal('live'), url: z.string() }),
+  z.object({ status: z.literal('snag') }),
+  z.object({ status: z.literal('blocked') }),
+])
+export type PreviewState = z.infer<typeof PreviewState>
 
 export const FeedEvent = z.object({
   id: z.string(),
@@ -221,6 +261,10 @@ export const AnswerDecisionRequest = z.object({
 })
 export const GetQuestionsRequest = z.object({ sessionId: z.string() })
 
+export const GetPreviewStateRequest = z.object({ projectId: z.string() })
+export const StartDevServerRequest = z.object({ projectId: z.string() })
+export const StopDevServerRequest = z.object({ projectId: z.string() })
+
 /* --------------------------- push payloads --------------------------- */
 
 export const FeedEventPush = z.object({ sessionId: z.string(), event: FeedEvent })
@@ -237,6 +281,9 @@ export const BackgroundStatusPush = z.object({
   backgroundStatus: BackgroundStatus,
 })
 export type BackgroundStatusPush = z.infer<typeof BackgroundStatusPush>
+
+export const PreviewUpdatePush = z.object({ projectId: z.string(), state: PreviewState })
+export type PreviewUpdatePush = z.infer<typeof PreviewUpdatePush>
 
 /* --------------------------- Group 1 probe (kept for dev smoke test) --------------------------- */
 
@@ -272,9 +319,14 @@ export const CH = {
   wizardStartScoping: 'wizard:start-scoping',
   wizardAnswer: 'wizard:answer-question',
   wizardApprove: 'wizard:approve-plan',
+  // live preview (Phase 2)
+  previewGetState: 'preview:get-state',
+  devserverStart: 'devserver:start',
+  devserverStop: 'devserver:stop',
   // pushes
   feedEvent: 'feed:event',
   boardUpdate: 'board:update',
   backgroundStatus: 'project:background-status',
   questionUpdate: 'question:update',
+  previewUpdate: 'preview:update',
 } as const

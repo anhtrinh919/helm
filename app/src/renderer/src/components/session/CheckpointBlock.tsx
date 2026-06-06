@@ -36,7 +36,7 @@ export function CheckpointBlock({
             <span className="text-2xl">🖼️</span>
             <span className="text-sm font-semibold text-ink">“{card.title}” is built</span>
             <span className="rounded-full bg-violetsoft px-2.5 py-0.5 text-[10px] font-black tracking-wide text-ink">
-              A live, clickable preview arrives in a later step
+              Open the Live Preview tab to try it
             </span>
           </div>
         )}

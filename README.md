@@ -8,4 +8,4 @@ TBD
 
 ## Status
 
-Phase 1 complete — The Executive Dashboard. Phase 2 next: Watch It Get Made.
+Phase 2 complete — Watch It Get Made. Phase 3 next: Point and Fix.

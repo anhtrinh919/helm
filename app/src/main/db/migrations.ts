@@ -78,6 +78,27 @@ const MIGRATIONS: Migration[] = [
   (db) => {
     db.exec(`ALTER TABLE feed_events ADD COLUMN ref_id TEXT;`)
   },
+  // 3 — Phase 2: project artifact tracking + build steps
+  (db) => {
+    db.exec(`
+      ALTER TABLE projects ADD COLUMN artifact_dir TEXT;
+      ALTER TABLE projects ADD COLUMN dev_pid INTEGER;
+
+      CREATE TABLE build_steps (
+        id           TEXT PRIMARY KEY,
+        project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        session_id   TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        card_id      TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+        status       TEXT NOT NULL,
+        started_at   INTEGER NOT NULL,
+        completed_at INTEGER,
+        dev_url      TEXT
+      );
+
+      CREATE INDEX idx_build_steps_project ON build_steps(project_id, started_at);
+      CREATE INDEX idx_build_steps_session ON build_steps(session_id);
+    `)
+  },
 ]
 
 export function migrate(db: Database.Database): void {

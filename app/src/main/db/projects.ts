@@ -51,6 +51,43 @@ export interface ProjectPatch {
   status?: ProjectStatus
 }
 
+/** Persist the project's on-disk working directory (set once, on first build). */
+export function setArtifactDir(db: Db, projectId: string, dir: string): void {
+  db.prepare(`UPDATE projects SET artifact_dir = ?, updated_at = ? WHERE id = ?`).run(
+    dir,
+    Date.now(),
+    projectId,
+  )
+}
+
+export function getArtifactDir(db: Db, projectId: string): string | null {
+  const row = db.prepare(`SELECT artifact_dir FROM projects WHERE id = ?`).get(projectId) as
+    | { artifact_dir: string | null }
+    | undefined
+  if (!row) throw new NotFoundError('project not found')
+  return row.artifact_dir ?? null
+}
+
+/** Track the running dev-server PID (null when no server is up). */
+export function setDevPid(db: Db, projectId: string, pid: number | null): void {
+  db.prepare(`UPDATE projects SET dev_pid = ? WHERE id = ?`).run(pid, projectId)
+}
+
+export function getDevPid(db: Db, projectId: string): number | null {
+  const row = db.prepare(`SELECT dev_pid FROM projects WHERE id = ?`).get(projectId) as
+    | { dev_pid: number | null }
+    | undefined
+  return row?.dev_pid ?? null
+}
+
+/** Projects that have a real working directory (candidates for dev-server resume). */
+export function listProjectsWithArtifacts(db: Db): { id: string; devPid: number | null }[] {
+  const rows = db
+    .prepare(`SELECT id, dev_pid FROM projects WHERE artifact_dir IS NOT NULL`)
+    .all() as { id: string; dev_pid: number | null }[]
+  return rows.map((r) => ({ id: r.id, devPid: r.dev_pid }))
+}
+
 export function updateProject(db: Db, id: string, patch: ProjectPatch): Project {
   const existing = getProject(db, id)
   const name = patch.name ?? existing.name
