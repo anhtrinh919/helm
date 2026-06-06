@@ -99,7 +99,7 @@ export function PointCommentBox({
       {/* Actions */}
       <div className="mt-2.5 flex items-center gap-3">
         <span className="text-[11px] text-soft">
-          {variant === 'element' ? 'Saved with a snapshot' : 'Saved with this screen'}
+          {variant === 'element' ? 'Saved with a snapshot' : 'Saved as a page comment'}
         </span>
         <span className="flex-1" />
         <button onClick={onCancel} className="text-[12px] font-bold text-soft hover:text-ink">
