@@ -18,14 +18,17 @@ export function CheckpointBlock({
   const [flagging, setFlagging] = useState(false)
   const [note, setNote] = useState('')
   const shot = card.checkpoint?.screenshotPath
+  const isFix = card.type === 'fix_comment'
 
   return (
     <div className="rounded-[18px] brut bg-cream p-5">
       <div className="text-[11px] font-black tracking-[0.16em] text-soft">
-        {card.stepLabel ? card.stepLabel.replace(/:.*/, '').toUpperCase() : 'STEP'} · COMPLETE
+        {isFix
+          ? 'POINT & FIX · READY'
+          : `${card.stepLabel ? card.stepLabel.replace(/:.*/, '').toUpperCase() : 'STEP'} · COMPLETE`}
       </div>
       <div className="mt-1 font-display text-xl font-black text-ink">
-        Here’s what I built — does this look right?
+        {isFix ? 'Here’s the fix — does this look right?' : 'Here’s what I built — does this look right?'}
       </div>
 
       <div className="mt-4 overflow-hidden rounded-[12px] brut-2 bg-canvas">
@@ -34,9 +37,11 @@ export function CheckpointBlock({
         ) : (
           <div className="grid h-40 place-items-center gap-1.5 text-center">
             <span className="text-2xl">🖼️</span>
-            <span className="text-sm font-semibold text-ink">“{card.title}” is built</span>
+            <span className="text-sm font-semibold text-ink">
+              {isFix ? `“${card.title}” — handled` : `“${card.title}” is built`}
+            </span>
             <span className="rounded-full bg-violetsoft px-2.5 py-0.5 text-[10px] font-black tracking-wide text-ink">
-              Open the Live Preview tab to try it
+              {isFix ? 'Approving refreshes the Live Preview so you can verify' : 'Open the Live Preview tab to try it'}
             </span>
           </div>
         )}

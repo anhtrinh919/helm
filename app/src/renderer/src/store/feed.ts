@@ -39,7 +39,11 @@ function inferStatus(events: FeedEvent[], questions: QuestionQueueItem[]): FeedS
   // The last terminal marker wins — a stop or error after activity ends the session.
   const lastTerminal = [...events].reverse().find((e) => e.kind === 'stopped' || e.kind === 'error')
   if (lastTerminal) return lastTerminal.kind === 'stopped' ? 'stopped' : 'error'
-  if (events.some((e) => e.kind === 'checkpoint')) return 'done'
+  // A checkpoint means 'done' only while it's still the live tail — a rejected
+  // fix continues the SAME session, so anything after the last checkpoint
+  // (the "sent it back" steering line, fresh narration) returns it to active.
+  const lastCheckpoint = events.map((e) => e.kind).lastIndexOf('checkpoint')
+  if (lastCheckpoint !== -1 && lastCheckpoint === events.length - 1) return 'done'
   if (questions.some((q) => q.status === 'pending' || q.status === 'reopened')) {
     return 'paused_for_decision'
   }
@@ -128,6 +132,11 @@ export const useFeed = create<FeedState>((set, get) => ({
       else if (ev.kind === 'stopped') next.status = 'stopped'
       else if (ev.kind === 'error') next.status = 'error'
       else if (ev.kind === 'decision_prompt') next.status = 'paused_for_decision'
+      else if (s.status === 'done' && (ev.kind === 'narration' || ev.kind === 'activity' || ev.kind === 'steering')) {
+        // Fresh work after a checkpoint = the same session resumed (a rejected
+        // fix retrying). Live pushes must agree with the backfill inference.
+        next.status = 'active'
+      }
       return next as FeedState
     }),
 
@@ -163,14 +172,23 @@ export const useFeed = create<FeedState>((set, get) => ({
   },
 
   approveCheckpoint: async (verdict, note) => {
-    const cardId = get().card?.id
-    if (!cardId) return
-    const res = await helm.cards.approveCheckpoint(cardId, verdict, note)
+    const card = get().card
+    if (!card) return
+    const res = await helm.cards.approveCheckpoint(card.id, verdict, note)
     if (isIpcError(res)) return
     set({ card: res.card })
-    // "Something's off" re-opens the build so it can take another pass — never
-    // leave the user stuck on a checkpoint they rejected.
-    if (verdict === 'flagged') await get().retry()
+    if (verdict === 'flagged') {
+      // Fix sessions (Phase 3): the main process resumes the SAME session with
+      // the rejection note — the feed continues live. Starting a new build
+      // session here would spawn a duplicate with the wrong prompt.
+      if (card.type === 'fix_comment') {
+        set({ status: 'active' })
+        return
+      }
+      // "Something's off" re-opens the build so it can take another pass — never
+      // leave the user stuck on a checkpoint they rejected.
+      await get().retry()
+    }
   },
 
   retry: async () => {
