@@ -47,6 +47,7 @@ export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.El
       needs_you: [],
       failed: [],
       done: [],
+      waiting: [],
     }
     for (const c of cards) by[c.status].push(c)
     return by

@@ -35,6 +35,7 @@ import {
   getSession,
 } from '../sessions'
 import { appendEvent, getEvents } from '../feed-events'
+import { createFixComment, getFixComment, listOpenPins } from '../fix-comments'
 import { createQuestion, answerQuestion, reopenQuestion, listQuestions, nextPosition } from '../question-queue'
 import { InvalidTransitionError, NotFoundError, CannotReopenError, NoCheckpointError } from '../errors'
 import type { FeedEvent } from '../../../shared/ipc-schemas'
@@ -198,7 +199,7 @@ describe('migration 3 — artifact tracking + build steps', () => {
     const cols = db.prepare(`PRAGMA table_info(projects)`).all().map((r) => (r as { name: string }).name)
     expect(cols).toContain('artifact_dir')
     expect(cols).toContain('dev_pid')
-    expect(db.pragma('user_version', { simple: true })).toBe(3)
+    expect(db.pragma('user_version', { simple: true })).toBe(4)
   })
 
   it('artifact_dir is null on a fresh project and round-trips once set', () => {
@@ -259,5 +260,118 @@ describe('migration 3 — artifact tracking + build steps', () => {
     createBuildStep(db, p.id, session.id, card.id)
     db.prepare(`DELETE FROM projects WHERE id = ?`).run(p.id)
     expect(getLatestBuildStep(db, p.id)).toBeNull()
+  })
+})
+
+describe('fix comments (Phase 3, migration 4)', () => {
+  const elementCapture = {
+    selector: 'main > button#submit',
+    boundingBox: { x: 10, y: 20, width: 120, height: 40 },
+    screenshotCrop: 'aGVsbG8=',
+    pinX: 0.42,
+    pinY: 0.61,
+  }
+
+  function seed(): { projectId: string; cardId: string } {
+    const p = createProject(db, 'FixProj')
+    const card = createCard(db, p.id, 'fix_comment', 'Button looks broken', 'user_added', 'waiting')
+    return { projectId: p.id, cardId: card.id }
+  }
+
+  it('migration 4 creates the fix_comments table with indexes', () => {
+    const tables = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`)
+      .all() as { name: string }[]
+    expect(tables.map((t) => t.name)).toContain('fix_comments')
+    const indexes = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'fix_comments'`)
+      .all() as { name: string }[]
+    expect(indexes.map((i) => i.name)).toEqual(
+      expect.arrayContaining(['idx_fix_comments_project', 'idx_fix_comments_card']),
+    )
+  })
+
+  it('creates a fix_comment card with waiting status', () => {
+    const p = createProject(db, 'WaitProj')
+    const card = createCard(db, p.id, 'fix_comment', 'Button looks broken', 'user_added', 'waiting')
+    expect(card.type).toBe('fix_comment')
+    expect(card.status).toBe('waiting')
+    expect(listCards(db, p.id)[0]!.status).toBe('waiting')
+  })
+
+  it('creates and reads an element-level fix comment (id matches card id)', () => {
+    const { projectId, cardId } = seed()
+    const fc = createFixComment(db, {
+      cardId,
+      projectId,
+      ...elementCapture,
+      note: 'This button looks broken',
+      noteType: 'bug',
+    })
+    expect(fc.id).toBe(cardId)
+    const read = getFixComment(db, cardId)
+    expect(read.selector).toBe(elementCapture.selector)
+    expect(read.boundingBox).toEqual(elementCapture.boundingBox)
+    expect(read.screenshotCrop).toBe('aGVsbG8=')
+    expect(read.pinX).toBeCloseTo(0.42)
+    expect(read.noteType).toBe('bug')
+  })
+
+  it('creates a page-level fix comment with null capture fields', () => {
+    const { projectId, cardId } = seed()
+    createFixComment(db, { cardId, projectId, note: 'Page feels cramped', noteType: 'change' })
+    const read = getFixComment(db, cardId)
+    expect(read.selector).toBeNull()
+    expect(read.boundingBox).toBeNull()
+    expect(read.screenshotCrop).toBeNull()
+    expect(read.pinX).toBeNull()
+    expect(read.pinY).toBeNull()
+  })
+
+  it('getFixComment throws NotFound for a missing record', () => {
+    expect(() => getFixComment(db, 'nope')).toThrow(NotFoundError)
+  })
+
+  it('listOpenPins returns open pins only — done cards excluded, no screenshot field', () => {
+    const p = createProject(db, 'Pins')
+    const c1 = createCard(db, p.id, 'fix_comment', 'one', 'user_added', 'waiting')
+    const c2 = createCard(db, p.id, 'fix_comment', 'two', 'user_added', 'waiting')
+    const c3 = createCard(db, p.id, 'fix_comment', 'three', 'user_added', 'waiting')
+    createFixComment(db, { cardId: c1.id, projectId: p.id, ...elementCapture, note: 'one', noteType: 'bug' })
+    createFixComment(db, { cardId: c2.id, projectId: p.id, note: 'two', noteType: 'change' })
+    createFixComment(db, { cardId: c3.id, projectId: p.id, ...elementCapture, note: 'three', noteType: 'bug' })
+    // move c3 → building → done (resolved)
+    updateCardStatus(db, c3.id, 'building')
+    updateCardStatus(db, c3.id, 'done')
+    const pins = listOpenPins(db, p.id)
+    expect(pins.map((x) => x.cardId).sort()).toEqual([c1.id, c2.id].sort())
+    const el = pins.find((x) => x.cardId === c1.id)!
+    expect(el.pinX).toBeCloseTo(0.42)
+    expect(el.noteType).toBe('bug')
+    expect('screenshotCrop' in el).toBe(false)
+    const page = pins.find((x) => x.cardId === c2.id)!
+    expect(page.pinX).toBeNull()
+    expect(page.pinY).toBeNull()
+  })
+
+  it('fix comments cascade-delete with their card', () => {
+    const { projectId, cardId } = seed()
+    createFixComment(db, { cardId, projectId, note: 'bye', noteType: 'bug' })
+    db.prepare(`DELETE FROM cards WHERE id = ?`).run(cardId)
+    expect(() => getFixComment(db, cardId)).toThrow(NotFoundError)
+  })
+
+  it('waiting card transitions: waiting → building allowed; waiting → done rejected', () => {
+    const { cardId } = seed()
+    expect(updateCardStatus(db, cardId, 'building').status).toBe('building')
+    const { cardId: c2 } = seed()
+    expect(() => updateCardStatus(db, c2, 'done')).toThrow(InvalidTransitionError)
+  })
+
+  it('regression: non-fix cards still start planned and follow the old lifecycle', () => {
+    const p = createProject(db, 'Reg')
+    const card = createCard(db, p.id, 'feature', 'Sign-in')
+    expect(card.status).toBe('planned')
+    expect(() => updateCardStatus(db, card.id, 'waiting')).toThrow(InvalidTransitionError)
   })
 })

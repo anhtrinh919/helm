@@ -29,11 +29,23 @@ export type ProjectStatus = z.infer<typeof ProjectStatus>
 export const BackgroundStatus = z.enum(['idle', 'active', 'needs_you', 'failed'])
 export type BackgroundStatus = z.infer<typeof BackgroundStatus>
 
-export const CardType = z.enum(['feature', 'bug', 'decision'])
+export const CardType = z.enum(['feature', 'bug', 'decision', 'fix_comment'])
 export type CardType = z.infer<typeof CardType>
 
-export const CardStatus = z.enum(['planned', 'up_next', 'building', 'needs_you', 'failed', 'done'])
+/** 'waiting' (Phase 3) = a filed point-and-fix comment whose fix hasn't been started. */
+export const CardStatus = z.enum([
+  'planned',
+  'up_next',
+  'building',
+  'needs_you',
+  'failed',
+  'done',
+  'waiting',
+])
 export type CardStatus = z.infer<typeof CardStatus>
+
+export const NoteType = z.enum(['bug', 'change'])
+export type NoteType = z.infer<typeof NoteType>
 
 export const CardSource = z.enum(['plan_seed', 'user_added', 'agent_raised'])
 export type CardSource = z.infer<typeof CardSource>
@@ -154,6 +166,43 @@ export const PreviewState = z.discriminatedUnion('status', [
   z.object({ status: z.literal('blocked') }),
 ])
 export type PreviewState = z.infer<typeof PreviewState>
+
+export const BoundingBox = z.object({
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number(),
+})
+export type BoundingBox = z.infer<typeof BoundingBox>
+
+/**
+ * A point-and-fix comment's full record (Phase 3). MAIN-PROCESS ONLY —
+ * `screenshotCrop` and `selector` never cross to the renderer. The renderer
+ * sees only `FixCommentPin` below.
+ */
+export const FixComment = z.object({
+  id: z.string(),
+  cardId: z.string(),
+  projectId: z.string(),
+  selector: z.string().nullable(),
+  boundingBox: BoundingBox.nullable(),
+  screenshotCrop: z.string().nullable(),
+  pinX: z.number().nullable(),
+  pinY: z.number().nullable(),
+  note: z.string(),
+  noteType: NoteType,
+  createdAt: z.number(),
+})
+export type FixComment = z.infer<typeof FixComment>
+
+/** The renderer-safe pin shape — position + type only, no visual context. */
+export const FixCommentPin = z.object({
+  cardId: z.string(),
+  pinX: z.number().nullable(),
+  pinY: z.number().nullable(),
+  noteType: NoteType,
+})
+export type FixCommentPin = z.infer<typeof FixCommentPin>
 
 export const FeedEvent = z.object({
   id: z.string(),

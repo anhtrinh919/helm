@@ -4,7 +4,9 @@ import type { Db } from './connection'
 import { InvalidTransitionError, NoCheckpointError, NotFoundError } from './errors'
 import { toCard, type CardRow } from './mappers'
 
-/** Allowed card status transitions (build-spine state machine). */
+/** Allowed card status transitions (build-spine state machine).
+ *  'waiting' (Phase 3) belongs to fix_comment cards only: filed → start fix →
+ *  building. Queueing keeps the stored status at 'waiting' (queue is in-memory). */
 const TRANSITIONS: Record<CardStatus, CardStatus[]> = {
   planned: ['up_next', 'building'],
   up_next: ['building', 'planned'],
@@ -12,6 +14,7 @@ const TRANSITIONS: Record<CardStatus, CardStatus[]> = {
   needs_you: ['building', 'failed'],
   failed: ['building', 'up_next'],
   done: ['building'], // re-open via flagged checkpoint
+  waiting: ['building'],
 }
 
 export function getCard(db: Db, id: string): Card {
@@ -40,6 +43,7 @@ export function createCard(
   type: CardType,
   title: string,
   source: CardSource = 'user_added',
+  initialStatus: Extract<CardStatus, 'planned' | 'waiting'> = 'planned',
 ): Card {
   // FK guard: project must exist
   const exists = db.prepare(`SELECT 1 FROM projects WHERE id = ?`).get(projectId)
@@ -48,8 +52,8 @@ export function createCard(
   const id = randomUUID()
   db.prepare(
     `INSERT INTO cards (id, project_id, type, title, status, source, position, depends_on, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'planned', ?, ?, '[]', ?, ?)`,
-  ).run(id, projectId, type, title, source, nextPosition(db, projectId), now, now)
+     VALUES (?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)`,
+  ).run(id, projectId, type, title, initialStatus, source, nextPosition(db, projectId), now, now)
   return getCard(db, id)
 }
 
