@@ -35,12 +35,23 @@ const api: HelmApi = {
     startServer: (projectId) => ipcRenderer.invoke(CH.devserverStart, { projectId }),
     stopServer: (projectId) => ipcRenderer.invoke(CH.devserverStop, { projectId }),
   },
+  points: {
+    register: (req) => ipcRenderer.invoke(CH.pointsRegister, req),
+    list: (projectId) => ipcRenderer.invoke(CH.pointsList, { projectId }),
+    activate: (projectId) => ipcRenderer.invoke(CH.pointsActivate, { projectId }),
+    deactivate: (projectId) => ipcRenderer.invoke(CH.pointsDeactivate, { projectId }),
+  },
+  fixSessions: {
+    start: (projectId, cardId) => ipcRenderer.invoke(CH.fixSessionsStart, { projectId, cardId }),
+  },
   events: {
     onBoardUpdate: (cb) => subscribe(CH.boardUpdate, cb),
     onBackgroundStatus: (cb) => subscribe(CH.backgroundStatus, cb),
     onFeedEvent: (cb) => subscribe(CH.feedEvent, cb),
     onQuestionUpdate: (cb) => subscribe(CH.questionUpdate, cb),
     onPreviewUpdate: (cb) => subscribe(CH.previewUpdate, cb),
+    onPinsUpdate: (cb) => subscribe(CH.pointsUpdate, cb),
+    onPointCapture: (cb) => subscribe(CH.pointCaptured, cb),
   },
   startProbe: (prompt) => ipcRenderer.invoke(CH.startProbe, { prompt }),
   getFeed: (sessionId) => ipcRenderer.invoke(CH.getFeed, { sessionId }),

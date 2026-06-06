@@ -8,6 +8,7 @@ import { registerDataBridge } from './ipc/data-bridge'
 import { registerSessionBridge } from './ipc/session-bridge'
 import { registerWizardBridge } from './ipc/wizard-bridge'
 import { registerPreviewBridge } from './ipc/preview-bridge'
+import { registerPointsBridge } from './ipc/points-bridge'
 import { SessionOrchestrator } from './sdk/session-orchestrator'
 import { DevServerManager } from './sdk/dev-server-manager'
 import { WizardOrchestrator } from './sdk/wizard-orchestrator'
@@ -67,6 +68,7 @@ void app.whenReady().then(() => {
   registerSessionBridge(db, orchestrator)
   registerWizardBridge(db, wizard, getWindow)
   registerPreviewBridge(db, devServer)
+  registerPointsBridge(db)
 
   createWindow()
   // Reconnect or restart each project's dev server so the Live Preview survives

@@ -5,13 +5,18 @@ import type {
   CardStatus,
   FeedEvent,
   FeedEventPush,
+  FixCommentPin,
+  PinsUpdatePush,
   PlanBlock,
+  PointCapturePush,
   PreviewState,
   PreviewUpdatePush,
   Project,
   QuestionQueueItem,
   QuestionUpdatePush,
+  RegisterPointRequest,
   Session,
+  StartFixSessionResponse,
   SteerMode,
   WizardScopingResponse,
   Result,
@@ -75,12 +80,29 @@ export interface HelmApi {
     /** Stop the project's dev server. */
     stopServer(projectId: string): Promise<Result<{ stopped: true }>>
   }
+  /** Point-and-fix (Phase 3): register comments, list pins, drive point mode. */
+  points: {
+    /** File a completed comment; main pairs it with a new board card. */
+    register(req: RegisterPointRequest): Promise<Result<{ card: Card }>>
+    /** Open (unresolved) pins for the live-preview overlay. */
+    list(projectId: string): Promise<Result<{ pins: FixCommentPin[] }>>
+    /** Turn point mode on: main injects the capture listener into the embedded app. */
+    activate(projectId: string): Promise<Result<{ ok: true }>>
+    /** Turn point mode off: main removes the capture listener. */
+    deactivate(projectId: string): Promise<Result<{ ok: true }>>
+  }
+  fixSessions: {
+    /** Start the fix for a comment card — or queue it behind the running fix. */
+    start(projectId: string, cardId: string): Promise<Result<StartFixSessionResponse>>
+  }
   events: {
     onBoardUpdate(cb: (p: BoardUpdatePush) => void): () => void
     onBackgroundStatus(cb: (p: BackgroundStatusPush) => void): () => void
     onFeedEvent(cb: (p: FeedEventPush) => void): () => void
     onQuestionUpdate(cb: (p: QuestionUpdatePush) => void): () => void
     onPreviewUpdate(cb: (p: PreviewUpdatePush) => void): () => void
+    onPinsUpdate(cb: (p: PinsUpdatePush) => void): () => void
+    onPointCapture(cb: (p: PointCapturePush) => void): () => void
   }
   /** Group 1 probe — dev smoke test of the live engine. */
   startProbe(prompt: string): Promise<Result<{ sessionId: string }>>

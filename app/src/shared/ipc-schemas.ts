@@ -314,7 +314,62 @@ export const GetPreviewStateRequest = z.object({ projectId: z.string() })
 export const StartDevServerRequest = z.object({ projectId: z.string() })
 export const StopDevServerRequest = z.object({ projectId: z.string() })
 
+/* --------------------------- Phase 3: point-and-fix --------------------------- */
+
+export const RegisterPointRequest = z.object({
+  projectId: z.string(),
+  // Element-level capture (all omitted for page-level comments). The renderer
+  // normally omits selector/screenshotCrop too — main merges its own pending
+  // capture so neither ever needs to round-trip through the renderer.
+  selector: z.string().optional(),
+  boundingBox: BoundingBox.optional(),
+  screenshotCrop: z.string().optional(),
+  pinX: z.number().min(0).max(1).optional(),
+  pinY: z.number().min(0).max(1).optional(),
+  note: z.string().min(1).max(500),
+  noteType: NoteType,
+})
+export type RegisterPointRequest = z.infer<typeof RegisterPointRequest>
+
+export const StartFixSessionRequest = z.object({ projectId: z.string(), cardId: z.string() })
+export type StartFixSessionRequest = z.infer<typeof StartFixSessionRequest>
+
+/** Started now (navigate to the session) vs queued behind the running fix (stay put). */
+export const StartFixSessionResponse = z.discriminatedUnion('queued', [
+  z.object({ queued: z.literal(false), session: Session }),
+  z.object({ queued: z.literal(true), session: z.null() }),
+])
+export type StartFixSessionResponse = z.infer<typeof StartFixSessionResponse>
+
+export const ListPinsRequest = z.object({ projectId: z.string() })
+export const ListPinsResponse = z.object({ pins: z.array(FixCommentPin) })
+export type ListPinsResponse = z.infer<typeof ListPinsResponse>
+
+export const PointModeRequest = z.object({ projectId: z.string() })
+
 /* --------------------------- push payloads --------------------------- */
+
+export const PinsUpdatePush = z.object({
+  projectId: z.string(),
+  pins: z.array(FixCommentPin),
+})
+export type PinsUpdatePush = z.infer<typeof PinsUpdatePush>
+
+/**
+ * Point-mode events from the embedded app, relayed by main. Renderer-safe by
+ * construction: geometry only — the CSS selector and screenshot never cross.
+ */
+export const PointCapturePush = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('captured'),
+    projectId: z.string(),
+    boundingBox: BoundingBox,
+    pinX: z.number(),
+    pinY: z.number(),
+  }),
+  z.object({ kind: z.literal('exit'), projectId: z.string() }),
+])
+export type PointCapturePush = z.infer<typeof PointCapturePush>
 
 export const FeedEventPush = z.object({ sessionId: z.string(), event: FeedEvent })
 export type FeedEventPush = z.infer<typeof FeedEventPush>
@@ -372,10 +427,18 @@ export const CH = {
   previewGetState: 'preview:get-state',
   devserverStart: 'devserver:start',
   devserverStop: 'devserver:stop',
+  // point-and-fix (Phase 3)
+  pointsRegister: 'points:register',
+  pointsList: 'points:list',
+  pointsActivate: 'points:activate',
+  pointsDeactivate: 'points:deactivate',
+  fixSessionsStart: 'fix-sessions:start',
   // pushes
   feedEvent: 'feed:event',
   boardUpdate: 'board:update',
   backgroundStatus: 'project:background-status',
   questionUpdate: 'question:update',
   previewUpdate: 'preview:update',
+  pointsUpdate: 'points:update',
+  pointCaptured: 'point:captured',
 } as const
