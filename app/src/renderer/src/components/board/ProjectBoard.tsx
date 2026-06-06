@@ -12,6 +12,7 @@ import { SectionHeader } from './SectionHeader'
 import { SpineItem } from './SpineItem'
 import { NeedsYouHeadline } from './NeedsYouHeadline'
 import { AddItemModal } from './AddItemModal'
+import { PointModeToggle } from './PointModeOverlay'
 
 /** Pull "N of M" out of a "Step N of M: ..." label for the in-flight eyebrow. */
 function stepOfM(card: Card | null, total: number, doneCount: number): string {
@@ -96,7 +97,11 @@ export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.El
 
         <main className="flex min-w-0 flex-1 flex-col gap-5 overflow-hidden">
           <TopBar projectName={projectName} building={building} />
-          <TabStrip active={tab} onSelect={setTab} />
+          <TabStrip
+            active={tab}
+            onSelect={setTab}
+            trailing={tab === 'preview' ? <PointModeToggle projectId={projectId} /> : undefined}
+          />
 
           {tab === 'preview' ? (
             <LivePreviewPane projectId={projectId} />

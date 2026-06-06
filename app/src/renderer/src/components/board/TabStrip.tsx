@@ -8,19 +8,23 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { id: 'board', label: 'Board' },
+  // Point & Fix shipped in Phase 3 — it lives INSIDE Live Preview (crosshair
+  // toggle in this strip's right cluster), not as its own tab.
   { id: 'preview', label: 'Live Preview' },
-  { id: 'fix', label: 'Point & Fix', phase: 3 },
   { id: 'decisions', label: 'Decisions', phase: 4 },
   { id: 'progress', label: 'Progress', phase: 4 },
 ]
 
-/** Board tab + later-phase tabs shown as invitations (phase badge), never greyed-out dead UI. */
+/** Board tab + later-phase tabs shown as invitations (phase badge), never greyed-out dead UI.
+ *  `trailing` renders in the strip's right cluster (the point-mode toggle, F36–F38). */
 export function TabStrip({
   active,
   onSelect,
+  trailing,
 }: {
   active: BoardTab
   onSelect: (tab: BoardTab) => void
+  trailing?: React.ReactNode
 }): React.JSX.Element {
   return (
     <div className="flex items-center gap-2">
@@ -43,6 +47,12 @@ export function TabStrip({
           </button>
         )
       })}
+      {trailing && (
+        <>
+          <span className="flex-1" />
+          {trailing}
+        </>
+      )}
     </div>
   )
 }
