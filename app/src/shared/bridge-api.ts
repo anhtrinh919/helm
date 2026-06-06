@@ -84,8 +84,8 @@ export interface HelmApi {
   points: {
     /** File a completed comment; main pairs it with a new board card. */
     register(req: RegisterPointRequest): Promise<Result<{ card: Card }>>
-    /** Open (unresolved) pins for the live-preview overlay. */
-    list(projectId: string): Promise<Result<{ pins: FixCommentPin[] }>>
+    /** Open (unresolved) pins + queue membership for the board/overlay. */
+    list(projectId: string): Promise<Result<{ pins: FixCommentPin[]; queuedCardIds: string[] }>>
     /** Turn point mode on: main injects the capture listener into the embedded app. */
     activate(projectId: string): Promise<Result<{ ok: true }>>
     /** Turn point mode off: main removes the capture listener. */

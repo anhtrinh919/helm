@@ -7,25 +7,27 @@ import {
   type NoteType,
 } from '@shared/ipc-schemas'
 
-/** Stable empty list so selectors never return a fresh reference. */
+/** Stable empty lists so selectors never return a fresh reference. */
 export const NO_PINS: FixCommentPin[] = []
+export const NO_QUEUED: string[] = []
 
 /**
- * A locked selection waiting for its note. Real captures carry geometry only —
- * the selector + screenshot stay in the main process and are merged at register
- * time. The mock demo panel fills `selector`/`screenshotCrop` synthetically.
+ * A locked selection waiting for its note. Geometry only — the selector and
+ * screenshot never reach the renderer; main merges its pending capture when
+ * the comment registers.
  */
 export interface LockedCapture {
   boundingBox: BoundingBox
   pinX: number
   pinY: number
-  selector?: string
-  screenshotCrop?: string
 }
 
 interface PointFixStore {
   /** Open (unresolved) pins per project. */
   pins: Record<string, FixCommentPin[]>
+  /** Cards queued behind the running fix per project (pushed by main — the
+   *  board holds no copy of this fact). */
+  queued: Record<string, string[]>
   /** Point mode on/off per project. */
   pointMode: Record<string, boolean>
   /** The locked element selection per project (comment box open). */
@@ -35,7 +37,7 @@ interface PointFixStore {
   /** Brief "sent to the board" flash after a successful register. */
   justFiled: Record<string, boolean>
 
-  setPins: (projectId: string, pins: FixCommentPin[]) => void
+  setPins: (projectId: string, pins: FixCommentPin[], queuedCardIds: string[]) => void
   loadPins: (projectId: string) => Promise<void>
   /** Subscribe to pins + capture pushes. Returns an unsubscribe fn. */
   subscribe: () => () => void
@@ -51,20 +53,25 @@ interface PointFixStore {
 
 export const usePointFix = create<PointFixStore>((set, get) => ({
   pins: {},
+  queued: {},
   pointMode: {},
   capture: {},
   pageComment: {},
   justFiled: {},
 
-  setPins: (projectId, pins) => set((s) => ({ pins: { ...s.pins, [projectId]: pins } })),
+  setPins: (projectId, pins, queuedCardIds) =>
+    set((s) => ({
+      pins: { ...s.pins, [projectId]: pins },
+      queued: { ...s.queued, [projectId]: queuedCardIds },
+    })),
 
   loadPins: async (projectId) => {
     const res = await helm.points.list(projectId)
-    if (!isIpcError(res)) get().setPins(projectId, res.pins)
+    if (!isIpcError(res)) get().setPins(projectId, res.pins, res.queuedCardIds)
   },
 
   subscribe: () => {
-    const offPins = helm.events.onPinsUpdate((p) => get().setPins(p.projectId, p.pins))
+    const offPins = helm.events.onPinsUpdate((p) => get().setPins(p.projectId, p.pins, p.queuedCardIds))
     const offCapture = helm.events.onPointCapture((p) => {
       if (p.kind === 'captured') {
         get().lockCapture(p.projectId, {
@@ -121,13 +128,7 @@ export const usePointFix = create<PointFixStore>((set, get) => ({
       note,
       noteType,
       ...(capture
-        ? {
-            boundingBox: capture.boundingBox,
-            pinX: capture.pinX,
-            pinY: capture.pinY,
-            ...(capture.selector ? { selector: capture.selector } : {}),
-            ...(capture.screenshotCrop ? { screenshotCrop: capture.screenshotCrop } : {}),
-          }
+        ? { boundingBox: capture.boundingBox, pinX: capture.pinX, pinY: capture.pinY }
         : {}),
     })
     if (isIpcError(res)) return false

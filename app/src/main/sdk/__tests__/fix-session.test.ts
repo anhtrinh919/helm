@@ -24,7 +24,6 @@ import { getEvents } from '../../db/feed-events'
 import { getFixComment } from '../../db/fix-comments'
 import { SessionOrchestrator } from '../session-orchestrator'
 import { DevServerManager, type DevServerDeps } from '../dev-server-manager'
-import { FixSessionQueue } from '../fix-session-queue'
 import { PointCaptureService, type GuestView } from '../point-capture-service'
 import { registerDataBridge } from '../../ipc/data-bridge'
 import { registerPointsBridge } from '../../ipc/points-bridge'
@@ -80,7 +79,6 @@ let db: Db
 let fr: ReturnType<typeof fakeRunner>
 let devDeps: ReturnType<typeof fakeDevDeps>
 let devServer: DevServerManager
-let queue: FixSessionQueue
 let orch: SessionOrchestrator
 let guest: ReturnType<typeof fakeGuest>
 let capture: PointCaptureService
@@ -93,8 +91,7 @@ beforeEach(() => {
   fr = fakeRunner()
   devDeps = fakeDevDeps()
   devServer = new DevServerManager(db, () => {}, devDeps, '/tmp/helm-fix-tests')
-  queue = new FixSessionQueue()
-  orch = new SessionOrchestrator(db, () => null, fr.runner, devServer, queue)
+  orch = new SessionOrchestrator(db, () => null, fr.runner, devServer)
   guest = fakeGuest()
   captures = []
   capture = new PointCaptureService(
@@ -108,8 +105,8 @@ beforeEach(() => {
     (pid, g) => captures.push({ pid, g }),
     () => {},
   )
-  registerDataBridge(db, () => null, { devServer, orchestrator: orch })
-  registerPointsBridge(db, { capture, devServer, orchestrator: orch, fixQueue: queue, getWindow: () => null })
+  registerDataBridge(db, () => null, { orchestrator: orch })
+  registerPointsBridge(db, { capture, devServer, orchestrator: orch, getWindow: () => null })
 
   const p = createProject(db, 'FixProj')
   projectId = p.id
@@ -121,24 +118,45 @@ async function goLive(): Promise<void> {
   await devServer.start(projectId)
 }
 
-const register = (over: Record<string, unknown> = {}): Promise<any> =>
-  call(CH.pointsRegister, {
+/** Make the guest report a click so main holds a pending capture (the REAL
+ *  path — the selector + crop never appear in the renderer's request). */
+async function clickGuest(selector = 'main > button#submit'): Promise<void> {
+  capture.activate(projectId)
+  const before = captures.length
+  guest.emitConsole(
+    '__HELM_POINT__' + JSON.stringify({ selector, rect: RECT, px: 0.42, py: 0.61 }),
+  )
+  await vi.waitFor(() => expect(captures.length).toBe(before + 1))
+}
+
+/** File a comment. Element-level registers (the default) first drive the real
+ *  guest-click capture when the preview is live; the request itself carries
+ *  GEOMETRY ONLY. Override pinX/boundingBox to undefined for page-level. */
+async function register(over: Record<string, unknown> = {}): Promise<any> {
+  const isElement = !('pinX' in over) || over.pinX != null
+  if (isElement && devServer.getState(projectId).status === 'live') await clickGuest()
+  return call(CH.pointsRegister, {
     projectId,
-    selector: 'main > button#submit',
     boundingBox: RECT,
-    screenshotCrop: 'Y3JvcA==',
     pinX: 0.42,
     pinY: 0.61,
     note: 'This button looks broken',
     noteType: 'bug',
     ...over,
   })
+}
 
 describe('points:register', () => {
   it('creates a waiting fix-comment card paired with its visual context', async () => {
     await goLive()
     const res = await register()
-    expect(res.card).toMatchObject({ type: 'fix_comment', status: 'waiting', title: 'This button looks broken' })
+    expect(res.card).toMatchObject({
+      type: 'fix_comment',
+      status: 'waiting',
+      title: 'This button looks broken',
+      noteType: 'bug', // the card describes itself — no pin-feed join needed
+      pageLevel: false,
+    })
     const fix = getFixComment(db, res.card.id)
     expect(fix.selector).toBe('main > button#submit')
     expect(fix.screenshotCrop).toBe('Y3JvcA==')
@@ -161,23 +179,43 @@ describe('points:register', () => {
 
   it('merges the pending capture when the renderer sends geometry only', async () => {
     await goLive()
-    capture.activate(projectId)
-    guest.emitConsole(
-      '__HELM_POINT__' + JSON.stringify({ selector: 'nav > a:nth-of-type(2)', rect: RECT, px: 0.5, py: 0.25 }),
-    )
-    await vi.waitFor(() => expect(captures).toHaveLength(1))
-    const res = await register({ selector: undefined, screenshotCrop: undefined, pinX: 0.5, pinY: 0.25 })
+    await clickGuest('nav > a:nth-of-type(2)')
+    const res = await call(CH.pointsRegister, {
+      projectId,
+      boundingBox: RECT,
+      pinX: 0.5,
+      pinY: 0.25,
+      note: 'This link is wrong',
+      noteType: 'bug',
+    })
     const fix = getFixComment(db, res.card.id)
     expect(fix.selector).toBe('nav > a:nth-of-type(2)')
     expect(fix.screenshotCrop).toBe('Y3JvcA==')
   })
 
+  it('a renderer-supplied selector/screenshot is structurally impossible (schema strips it)', async () => {
+    await goLive()
+    // No guest click happened — even a malicious/buggy renderer sending these
+    // fields cannot land them: the schema has no such fields to parse.
+    const res = await call(CH.pointsRegister, {
+      projectId,
+      selector: 'main > button#evil',
+      screenshotCrop: 'ZXZpbA==',
+      boundingBox: RECT,
+      pinX: 0.42,
+      pinY: 0.61,
+      note: 'Sneaky payload',
+      noteType: 'bug',
+    })
+    const fix = getFixComment(db, res.card.id)
+    expect(fix.selector).toBeNull()
+    expect(fix.screenshotCrop).toBeNull()
+  })
+
   it('page-level comment stores no visual context', async () => {
     await goLive()
     const res = await register({
-      selector: undefined,
       boundingBox: undefined,
-      screenshotCrop: undefined,
       pinX: undefined,
       pinY: undefined,
       note: 'This page feels cramped',
@@ -336,9 +374,9 @@ describe('remaining contract errors + push shapes (Stage 4)', () => {
     const blocker = join(dir, 'not-a-dir')
     writeFileSync(blocker, 'x')
     const badDev = new DevServerManager(db, () => {}, devDeps, join(blocker, 'projects'))
-    const badOrch = new SessionOrchestrator(db, () => null, fr.runner, badDev, queue)
+    const badOrch = new SessionOrchestrator(db, () => null, fr.runner, badDev)
     handlers.clear()
-    registerPointsBridge(db, { capture, devServer, orchestrator: badOrch, fixQueue: queue, getWindow: () => null })
+    registerPointsBridge(db, { capture, devServer, orchestrator: badOrch, getWindow: () => null })
     await goLive()
     const { card } = await register()
     // goLive persisted a working artifact dir — clear it so badDev must mkdir
@@ -359,17 +397,48 @@ describe('remaining contract errors + push shapes (Stage 4)', () => {
       capture,
       devServer,
       orchestrator: orch,
-      fixQueue: queue,
       getWindow: () => fakeWindow as never,
     })
     await goLive()
     const { card } = await register()
     const board = sends.find((s) => s.channel === CH.boardUpdate)
     expect(board?.payload).toMatchObject({ projectId, cardId: card.id })
-    const pins = sends.find((s) => s.channel === CH.pointsUpdate) as { payload: { pins: unknown[] } } | undefined
+    const pins = sends.find((s) => s.channel === CH.pointsUpdate) as
+      | { payload: { pins: unknown[]; queuedCardIds: string[] } }
+      | undefined
     expect(pins?.payload.pins).toHaveLength(1)
     expect(pins?.payload.pins[0]).toMatchObject({ cardId: card.id, noteType: 'bug' })
+    expect(pins?.payload.queuedCardIds).toEqual([])
     expect(JSON.stringify(pins?.payload)).not.toContain('screenshot')
     expect(JSON.stringify(pins?.payload)).not.toContain('selector')
+  })
+
+  it('queueing a fix pushes queue membership; starting it pushes the shrunk queue', async () => {
+    const sends: { channel: string; payload: { projectId?: string; queuedCardIds?: string[] } }[] = []
+    const fakeWindow = {
+      isDestroyed: () => false,
+      webContents: { send: (channel: string, payload: never) => sends.push({ channel, payload }) },
+    }
+    handlers.clear()
+    const pushOrch = new SessionOrchestrator(db, () => fakeWindow as never, fr.runner, devServer)
+    registerDataBridge(db, () => fakeWindow as never, { orchestrator: pushOrch })
+    registerPointsBridge(db, { capture, devServer, orchestrator: pushOrch, getWindow: () => fakeWindow as never })
+    await goLive()
+    const { card: c1 } = await register()
+    const { card: c2 } = await register({ note: 'Header is too dark', noteType: 'change' })
+    await call(CH.fixSessionsStart, { projectId, cardId: c1.id })
+    await call(CH.fixSessionsStart, { projectId, cardId: c2.id }) // queued
+
+    const queuedPush = sends.filter((s) => s.channel === CH.pointsUpdate).at(-1)
+    expect(queuedPush?.payload.queuedCardIds).toEqual([c2.id]) // board learns QUEUED from main
+
+    // Finish + approve c1 — the queue advances and the push reflects the drain.
+    fr.last().cb.onMessage(resultSuccess())
+    fr.last().cb.onClose()
+    await call(CH.cardsApproveCheckpoint, { cardId: c1.id, verdict: 'approved' })
+    await vi.waitFor(() => {
+      const last = sends.filter((s) => s.channel === CH.pointsUpdate).at(-1)
+      expect(last?.payload.queuedCardIds).toEqual([])
+    })
   })
 })

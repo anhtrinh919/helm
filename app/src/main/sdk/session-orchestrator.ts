@@ -13,7 +13,7 @@ import {
   setPendingCheckpoint,
   updateCardStatus,
 } from '../db/cards'
-import { getFixComment } from '../db/fix-comments'
+import { getFixComment, listOpenPins } from '../db/fix-comments'
 import type { FixComment } from '../../shared/ipc-schemas'
 import {
   ArtifactDirError,
@@ -23,7 +23,6 @@ import {
   NoVisualContextError,
   SpotlightOccupiedError,
 } from '../db/errors'
-import type { FixSessionQueue } from './fix-session-queue'
 import {
   createSession,
   getSession,
@@ -58,6 +57,15 @@ export class SessionOrchestrator {
   private interrupted = new Set<string>()
   /** Real-pipeline sessions → their build_step id (for completion / failure marking). */
   private buildStepBySession = new Map<string, string>()
+  /**
+   * The one-fix-at-a-time policy (Phase 3): one running fix per project, with
+   * the cards behind it in an ordered backlog. In-memory BY DESIGN — a queued
+   * card's stored status stays 'waiting', so a relaunch simply forgets queue
+   * order and the user starts the fix again. The orchestrator is the single
+   * owner of every transition (acquire, queue, release, advance).
+   */
+  private activeFix = new Map<string, string>() // projectId → running fix sessionId
+  private fixBacklog = new Map<string, string[]>() // projectId → ordered cardIds
 
   constructor(
     private db: Db,
@@ -70,8 +78,6 @@ export class SessionOrchestrator {
      * (text, sandboxed tmpdir, no tools) — the original behavior is preserved.
      */
     private devServer?: DevServerManager,
-    /** Phase 3: one-active-fix-per-project queue. Absent in Phase 1/2-style tests. */
-    private fixQueue?: FixSessionQueue,
   ) {}
 
   private send(channel: string, payload: unknown): void {
@@ -86,6 +92,21 @@ export class SessionOrchestrator {
 
   private pushBoard(card: Card): void {
     this.send(CH.boardUpdate, { projectId: card.projectId, cardId: card.id, card })
+  }
+
+  /** Cards queued behind the running fix (renderer display state). */
+  queuedFixCardIds(projectId: string): string[] {
+    return [...(this.fixBacklog.get(projectId) ?? [])]
+  }
+
+  /** Push the full pin list + queue membership — the one payload the board
+   *  trusts for fix-comment display state. */
+  private pushPins(projectId: string): void {
+    this.send(CH.pointsUpdate, {
+      projectId,
+      pins: listOpenPins(this.db, projectId),
+      queuedCardIds: this.queuedFixCardIds(projectId),
+    })
   }
 
   private pushBackground(projectId: string): void {
@@ -215,10 +236,64 @@ export class SessionOrchestrator {
     setCardSession(this.db, cardId, session.id)
     this.pushBoard(updateCardStatus(this.db, cardId, 'building'))
     this.pushBackground(projectId)
-    this.fixQueue?.setActive(projectId, session.id)
+    this.activeFix.set(projectId, session.id)
 
     this.runFix(session.id, projectId, cardId, this.buildFixPrompt(fix), cwd)
     return session
+  }
+
+  /**
+   * The single owner of the one-fix-at-a-time policy: start the fix now, or
+   * queue the card behind whatever is running (a fix or a regular build).
+   * Re-asking for an already-queued card is an idempotent "still queued".
+   */
+  startOrQueueFix(
+    projectId: string,
+    cardId: string,
+  ): { session: Session; queued: false } | { session: null; queued: true } {
+    const backlog = this.fixBacklog.get(projectId) ?? []
+    if (backlog.includes(cardId)) return { session: null, queued: true }
+    const card = getCard(this.db, cardId)
+    if (card.status !== 'waiting') throw new NotWaitingError('fix is not waiting to start')
+
+    const busy = this.activeFix.has(projectId) || findBuildingCard(this.db, projectId) != null
+    if (busy) {
+      backlog.push(cardId)
+      this.fixBacklog.set(projectId, backlog)
+      this.pushBoard(card)
+      this.pushPins(projectId) // queue membership changed — the board shows QUEUED
+      return { session: null, queued: true }
+    }
+    return { session: this.startFix(projectId, cardId), queued: false }
+  }
+
+  /**
+   * The user judged a fix checkpoint (the verdict is already recorded on the
+   * card). Approve lands it: pin resolved, preview refreshed, queue advanced.
+   * Reject sends the note back into the SAME session for another pass.
+   */
+  resolveFixCheckpoint(cardId: string, verdict: 'approved' | 'flagged', flagNote?: string): Card {
+    let card = getCard(this.db, cardId)
+    if (verdict === 'approved') {
+      if (card.status === 'building') card = updateCardStatus(this.db, cardId, 'done')
+      this.pushBoard(card)
+      this.pushPins(card.projectId)
+      if (this.devServer) {
+        // Bring the refreshed app up; state changes push preview:update on
+        // their own. The queue advances regardless of how the restart goes.
+        void this.devServer
+          .restart(card.projectId)
+          .catch(() => {})
+          .finally(() => this.maybeStartNextFix(card.projectId))
+      } else {
+        this.maybeStartNextFix(card.projectId)
+      }
+    } else {
+      if (card.sessionId) this.resumeWithRejection(card.sessionId, flagNote ?? '')
+      card = getCard(this.db, cardId)
+      this.pushBoard(card)
+    }
+    return card
   }
 
   /**
@@ -243,7 +318,7 @@ export class SessionOrchestrator {
     } catch {
       /* already building (checkpoint pending) — fine */
     }
-    this.fixQueue?.setActive(session.projectId, sessionId)
+    this.activeFix.set(session.projectId, sessionId)
     this.pushBackground(session.projectId)
     this.emit(makeFeedEvent(sessionId, 'steering', `You sent it back: ${flagNote}`))
 
@@ -253,11 +328,11 @@ export class SessionOrchestrator {
   /** A fix resolved (approved) or failed — free the slot and start the next
    *  queued fix silently (board updates only, never navigation). */
   maybeStartNextFix(projectId: string): void {
-    if (!this.fixQueue) return
-    this.fixQueue.clearActive(projectId)
+    this.activeFix.delete(projectId)
     if (findBuildingCard(this.db, projectId)) return // something else is in flight
-    const nextCardId = this.fixQueue.dequeue(projectId)
+    const nextCardId = this.fixBacklog.get(projectId)?.shift()
     if (!nextCardId) return
+    this.pushPins(projectId) // the queue shrank — the board drops its QUEUED badge
     try {
       this.startFix(projectId, nextCardId)
     } catch {

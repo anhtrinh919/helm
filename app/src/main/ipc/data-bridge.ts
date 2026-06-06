@@ -20,22 +20,18 @@ import {
 import { createProject, getProject, listProjects } from '../db/projects'
 import {
   createCard,
-  getCard,
   listCards,
   updateCardStatus,
   updateCheckpoint,
   promoteNextPlanned,
 } from '../db/cards'
-import { listOpenPins } from '../db/fix-comments'
-import type { DevServerManager } from '../sdk/dev-server-manager'
 import type { SessionOrchestrator } from '../sdk/session-orchestrator'
 
 type GetWindow = () => BrowserWindow | null
 
-/** Phase 3 hooks for fix-comment checkpoints: approve refreshes the preview and
- *  advances the fix queue; reject sends the note back into the same session. */
+/** Phase 3 hook for fix-comment checkpoints — the orchestrator owns the whole
+ *  outcome (preview refresh, pin resolution, queue advance, reject-retry). */
 export interface FixCheckpointDeps {
-  devServer: DevServerManager
   orchestrator: SessionOrchestrator
 }
 
@@ -113,25 +109,9 @@ export function registerDataBridge(db: Db, getWindow: GetWindow, fix?: FixCheckp
       const { cardId, verdict, flagNote } = ApproveCheckpointRequest.parse(raw)
       let card = updateCheckpoint(db, cardId, verdict, flagNote)
 
-      // Fix-comment cards (Phase 3): approve lands the fix — refresh the
-      // preview, resolve the pin, advance the queue. Reject retries the session.
+      // Fix-comment cards (Phase 3): the whole outcome is the orchestrator's.
       if (card.type === 'fix_comment' && fix) {
-        if (verdict === 'approved') {
-          if (card.status === 'building') card = updateCardStatus(db, cardId, 'done')
-          pushBoard(card.projectId, card)
-          send(CH.pointsUpdate, { projectId: card.projectId, pins: listOpenPins(db, card.projectId) })
-          // Bring the refreshed app up; state changes push preview:update on
-          // their own. The queue advances regardless of how the restart goes.
-          void fix.devServer
-            .restart(card.projectId)
-            .catch(() => {})
-            .finally(() => fix.orchestrator.maybeStartNextFix(card.projectId))
-        } else {
-          if (card.sessionId) fix.orchestrator.resumeWithRejection(card.sessionId, flagNote ?? '')
-          card = getCard(db, cardId)
-          pushBoard(card.projectId, card)
-        }
-        return { card }
+        return { card: fix.orchestrator.resolveFixCheckpoint(cardId, verdict, flagNote) }
       }
 
       if (verdict === 'approved') {

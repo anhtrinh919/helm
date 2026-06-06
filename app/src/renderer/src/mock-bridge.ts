@@ -234,7 +234,8 @@ export function createMockBridge(): HelmApi {
 
   const pushPins = (projectId: string): void => {
     const pins = pinsByProject[projectId] ?? []
-    pinsListeners.forEach((cb) => cb({ projectId, pins }))
+    const queuedCardIds = [...(fixQueue.get(projectId) ?? [])]
+    pinsListeners.forEach((cb) => cb({ projectId, pins, queuedCardIds }))
   }
 
   const runScriptedFix = (sessionId: string, c: Card): void => {
@@ -386,6 +387,7 @@ export function createMockBridge(): HelmApi {
             // Auto-start the next queued fix — board updates only, no navigation.
             const nextId = (fixQueue.get(c.projectId) ?? []).shift()
             if (nextId) {
+              pushPins(c.projectId) // queue shrank — QUEUED badge drops
               const next = findCard(nextId)
               if (next) startFixNow(c.projectId, next)
             }
@@ -569,6 +571,8 @@ export function createMockBridge(): HelmApi {
           sessionId: null,
           decisionPrompt: null,
           checkpoint: null,
+          noteType: req.noteType,
+          pageLevel: req.pinX == null,
         }
         list.push(c)
         pushBoard(c)
@@ -581,7 +585,10 @@ export function createMockBridge(): HelmApi {
         pushPins(req.projectId)
         return { card: c }
       },
-      list: async (projectId) => ({ pins: pinsByProject[projectId] ?? [] }),
+      list: async (projectId) => ({
+        pins: pinsByProject[projectId] ?? [],
+        queuedCardIds: [...(fixQueue.get(projectId) ?? [])],
+      }),
       activate: async () => ({ ok: true as const }),
       deactivate: async () => ({ ok: true as const }),
     },
@@ -595,6 +602,7 @@ export function createMockBridge(): HelmApi {
           if (!q.includes(cardId)) {
             q.push(cardId)
             fixQueue.set(projectId, q)
+            pushPins(projectId) // queue membership changed — board shows QUEUED
           }
           return { queued: true as const, session: null }
         }

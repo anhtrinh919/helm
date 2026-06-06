@@ -20,7 +20,10 @@ const { bridge, pushes } = vi.hoisted(() => {
         bridge.registered.push(req)
         return bridge.registerResult
       },
-      list: async () => ({ pins: [{ cardId: 'c1', pinX: 0.5, pinY: 0.5, noteType: 'bug' }] }),
+      list: async () => ({
+        pins: [{ cardId: 'c1', pinX: 0.5, pinY: 0.5, noteType: 'bug' }],
+        queuedCardIds: ['c9'],
+      }),
       activate: async (projectId: string) => {
         bridge.activated.push(projectId)
         return { ok: true }
@@ -51,7 +54,7 @@ import { usePointFix, NO_PINS } from '../pins'
 const RECT = { x: 10, y: 20, width: 100, height: 40 }
 
 beforeEach(() => {
-  usePointFix.setState({ pins: {}, pointMode: {}, capture: {}, pageComment: {}, justFiled: {} })
+  usePointFix.setState({ pins: {}, queued: {}, pointMode: {}, capture: {}, pageComment: {}, justFiled: {} })
   bridge.activated.length = 0
   bridge.deactivated.length = 0
   bridge.registered.length = 0
@@ -59,16 +62,18 @@ beforeEach(() => {
 })
 
 describe('point-fix store', () => {
-  it('loadPins fills the per-project pin list', async () => {
+  it('loadPins fills the per-project pin list + queue membership', async () => {
     await usePointFix.getState().loadPins('p1')
     expect(usePointFix.getState().pins['p1']).toHaveLength(1)
+    expect(usePointFix.getState().queued['p1']).toEqual(['c9'])
     expect(usePointFix.getState().pins['p2'] ?? NO_PINS).toBe(NO_PINS)
   })
 
-  it('pins push updates the store', () => {
+  it('pins push updates the store (pins + queue)', () => {
     const off = usePointFix.getState().subscribe()
-    pushes.pins.forEach((cb) => cb({ projectId: 'p1', pins: [] }))
+    pushes.pins.forEach((cb) => cb({ projectId: 'p1', pins: [], queuedCardIds: ['c2'] }))
     expect(usePointFix.getState().pins['p1']).toEqual([])
+    expect(usePointFix.getState().queued['p1']).toEqual(['c2'])
     off()
   })
 
@@ -101,11 +106,9 @@ describe('point-fix store', () => {
     expect(usePointFix.getState().pageComment['p1']).toBe(true)
   })
 
-  it('register sends the capture geometry, exits point mode, flashes success', async () => {
+  it('register sends GEOMETRY ONLY, exits point mode, flashes success', async () => {
     usePointFix.getState().enterPointMode('p1')
-    usePointFix
-      .getState()
-      .lockCapture('p1', { boundingBox: RECT, pinX: 0.4, pinY: 0.6, selector: 's', screenshotCrop: 'c' })
+    usePointFix.getState().lockCapture('p1', { boundingBox: RECT, pinX: 0.4, pinY: 0.6 })
     const ok = await usePointFix.getState().register('p1', 'Broken thing', 'bug')
     expect(ok).toBe(true)
     expect(bridge.registered[0]).toMatchObject({
@@ -113,9 +116,10 @@ describe('point-fix store', () => {
       note: 'Broken thing',
       noteType: 'bug',
       pinX: 0.4,
-      selector: 's',
-      screenshotCrop: 'c',
     })
+    // The privacy invariant, structurally: no selector/screenshot in the request.
+    expect(JSON.stringify(bridge.registered[0])).not.toContain('selector')
+    expect(JSON.stringify(bridge.registered[0])).not.toContain('screenshot')
     expect(usePointFix.getState().pointMode['p1']).toBe(false)
     expect(usePointFix.getState().justFiled['p1']).toBe(true)
   })

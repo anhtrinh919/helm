@@ -17,13 +17,12 @@ import {
   PreviewNotLiveError,
 } from '../db/errors'
 import { getProject } from '../db/projects'
-import { createCard, findBuildingCard, getCard } from '../db/cards'
+import { createCard, getCard } from '../db/cards'
 import { createFixComment, listOpenPins } from '../db/fix-comments'
 import { SdkInitError } from '../sdk/session-runner'
 import type { PointCaptureService } from '../sdk/point-capture-service'
 import type { DevServerManager } from '../sdk/dev-server-manager'
 import type { SessionOrchestrator } from '../sdk/session-orchestrator'
-import type { FixSessionQueue } from '../sdk/fix-session-queue'
 
 function mapError(e: unknown): IpcError {
   if (e instanceof NotFoundError) return { error: 'not_found' }
@@ -43,21 +42,28 @@ export interface PointsBridgeDeps {
   capture?: PointCaptureService
   devServer?: DevServerManager
   orchestrator?: SessionOrchestrator
-  fixQueue?: FixSessionQueue
   getWindow?: () => BrowserWindow | null
 }
 
 /** Point-and-fix IPC (Phase 3): file comments, list pins, start fixes, drive
- *  point mode. The optional deps keep validation-only tests cheap. */
+ *  point mode. Parse-and-delegate only — the fix-session policy (queue, busy
+ *  rule, checkpoint outcomes) lives in the orchestrator. The optional deps
+ *  keep validation-only tests cheap. */
 export function registerPointsBridge(db: Db, deps: PointsBridgeDeps = {}): void {
-  const { capture, devServer, orchestrator, fixQueue, getWindow } = deps
+  const { capture, devServer, orchestrator, getWindow } = deps
 
   const send = (channel: string, payload: unknown): void => {
     const win = getWindow?.()
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
   }
+  const queuedIds = (projectId: string): string[] =>
+    orchestrator?.queuedFixCardIds(projectId) ?? []
   const pushPins = (projectId: string): void => {
-    send(CH.pointsUpdate, { projectId, pins: listOpenPins(db, projectId) })
+    send(CH.pointsUpdate, {
+      projectId,
+      pins: listOpenPins(db, projectId),
+      queuedCardIds: queuedIds(projectId),
+    })
   }
 
   ipcMain.handle(CH.pointsRegister, (_e, raw: unknown) => {
@@ -69,27 +75,30 @@ export function registerPointsBridge(db: Db, deps: PointsBridgeDeps = {}): void 
       }
 
       // Element-level comments are identified by their geometry. The renderer
-      // never holds the selector/screenshot — main merges its pending capture.
+      // never holds the selector/screenshot — those exist only in main's
+      // pending capture, merged here.
       const isElement = req.pinX != null || req.boundingBox != null
       const pending = capture?.consumePending(req.projectId) ?? null
       const visual = isElement
         ? {
-            selector: req.selector ?? pending?.selector ?? undefined,
+            selector: pending?.selector ?? undefined,
             boundingBox: req.boundingBox ?? pending?.boundingBox ?? undefined,
-            screenshotCrop: req.screenshotCrop ?? pending?.screenshotCrop ?? undefined,
+            screenshotCrop: pending?.screenshotCrop ?? undefined,
             pinX: req.pinX ?? pending?.pinX ?? undefined,
             pinY: req.pinY ?? pending?.pinY ?? undefined,
           }
         : {}
 
-      const card = createCard(db, req.projectId, 'fix_comment', req.note, 'user_added', 'waiting')
+      const bare = createCard(db, req.projectId, 'fix_comment', req.note, 'user_added', 'waiting')
       createFixComment(db, {
-        cardId: card.id,
+        cardId: bare.id,
         projectId: req.projectId,
         ...visual,
         note: req.note,
         noteType: req.noteType,
       })
+      // Re-read so the card carries its fix dressing (noteType/pageLevel).
+      const card = getCard(db, bare.id)
       send(CH.boardUpdate, { projectId: req.projectId, cardId: card.id, card })
       pushPins(req.projectId)
       return { card }
@@ -102,24 +111,11 @@ export function registerPointsBridge(db: Db, deps: PointsBridgeDeps = {}): void 
     try {
       const { projectId, cardId } = StartFixSessionRequest.parse(raw)
       getProject(db, projectId)
-      const card = getCard(db, cardId)
-      if (card.type !== 'fix_comment') throw new NotFoundError('not a fix-comment card')
-      if (!orchestrator || !fixQueue) throw new ArtifactDirError('fix pipeline not wired')
-
-      // Already queued → idempotent "still queued".
-      if (fixQueue.isQueued(projectId, cardId)) return { session: null, queued: true as const }
-      if (card.status !== 'waiting') throw new NotWaitingError('fix is not waiting to start')
-
-      // One session at a time (Phase 3): a running fix OR a running build queues it.
-      const busy = fixQueue.isActive(projectId) || findBuildingCard(db, projectId) != null
-      if (busy) {
-        fixQueue.enqueue(projectId, cardId)
-        send(CH.boardUpdate, { projectId, cardId, card })
-        return { session: null, queued: true as const }
+      if (getCard(db, cardId).type !== 'fix_comment') {
+        throw new NotFoundError('not a fix-comment card')
       }
-
-      const session = orchestrator.startFix(projectId, cardId)
-      return { session, queued: false as const }
+      if (!orchestrator) throw new ArtifactDirError('fix pipeline not wired')
+      return orchestrator.startOrQueueFix(projectId, cardId)
     } catch (e) {
       return mapError(e)
     }
@@ -129,7 +125,7 @@ export function registerPointsBridge(db: Db, deps: PointsBridgeDeps = {}): void 
     try {
       const { projectId } = ListPinsRequest.parse(raw)
       getProject(db, projectId) // throws NotFoundError → not_found
-      return { pins: listOpenPins(db, projectId) }
+      return { pins: listOpenPins(db, projectId), queuedCardIds: queuedIds(projectId) }
     } catch (e) {
       return mapError(e)
     }

@@ -34,16 +34,20 @@ interface FeedState {
   reset: () => void
 }
 
-/** Infer the UI status from a reattached session's feed + questions. */
+/** THE status rule — used for backfill on reattach AND recomputed on every live
+ *  push, so the two paths can never drift. */
 function inferStatus(events: FeedEvent[], questions: QuestionQueueItem[]): FeedStatus {
   // The last terminal marker wins — a stop or error after activity ends the session.
   const lastTerminal = [...events].reverse().find((e) => e.kind === 'stopped' || e.kind === 'error')
   if (lastTerminal) return lastTerminal.kind === 'stopped' ? 'stopped' : 'error'
+  const last = events[events.length - 1]
   // A checkpoint means 'done' only while it's still the live tail — a rejected
   // fix continues the SAME session, so anything after the last checkpoint
   // (the "sent it back" steering line, fresh narration) returns it to active.
-  const lastCheckpoint = events.map((e) => e.kind).lastIndexOf('checkpoint')
-  if (lastCheckpoint !== -1 && lastCheckpoint === events.length - 1) return 'done'
+  if (last?.kind === 'checkpoint') return 'done'
+  // A decision prompt at the tail pauses immediately, even before its question
+  // row arrives on the separate question push.
+  if (last?.kind === 'decision_prompt') return 'paused_for_decision'
   if (questions.some((q) => q.status === 'pending' || q.status === 'reopened')) {
     return 'paused_for_decision'
   }
@@ -127,17 +131,8 @@ export const useFeed = create<FeedState>((set, get) => ({
   appendEvent: (ev) =>
     set((s) => {
       if (s.events.some((e) => e.id === ev.id)) return s
-      const next: Partial<FeedState> = { events: [...s.events, ev] }
-      if (ev.kind === 'checkpoint') next.status = 'done'
-      else if (ev.kind === 'stopped') next.status = 'stopped'
-      else if (ev.kind === 'error') next.status = 'error'
-      else if (ev.kind === 'decision_prompt') next.status = 'paused_for_decision'
-      else if (s.status === 'done' && (ev.kind === 'narration' || ev.kind === 'activity' || ev.kind === 'steering')) {
-        // Fresh work after a checkpoint = the same session resumed (a rejected
-        // fix retrying). Live pushes must agree with the backfill inference.
-        next.status = 'active'
-      }
-      return next as FeedState
+      const events = [...s.events, ev]
+      return { events, status: inferStatus(events, s.questions) }
     }),
 
   upsertQuestion: (q) =>

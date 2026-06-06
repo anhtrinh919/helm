@@ -1,10 +1,11 @@
 import type { Card } from '@shared/ipc-schemas'
-import { usePointFix, NO_PINS } from '../../store/pins'
 
 /**
  * A fix-comment card on the board's REPORTED shelf (F50–F55 + the Fix-Comment
  * Card component sheet). One face, status-driven dressing: waiting shows
  * "Start Fix"; queued/building/needs-you/failed show badges; done resolves.
+ * The card describes itself (noteType/pageLevel ride on the Card) — no joins
+ * against the preview overlay's pin feed.
  */
 
 function timeAgo(ts: number): string {
@@ -35,12 +36,8 @@ export function FixCommentCard({
   onStartFix: (cardId: string) => void
   onOpen: (cardId: string) => void
 }): React.JSX.Element {
-  const pins = usePointFix((s) => (card.projectId ? s.pins[card.projectId] : undefined)) ?? NO_PINS
-  // The pin is the renderer's only source for the comment's type/placement —
-  // resolved cards have no pin (by contract), so they drop the type dressing.
-  const pin = pins.find((p) => p.cardId === card.id)
-  const isPage = pin ? pin.pinX == null : false
-  const noteType = pin?.noteType
+  const isPage = card.pageLevel === true
+  const noteType = card.noteType
   const done = card.status === 'done'
   const openable = card.sessionId != null && !done
 
@@ -52,9 +49,9 @@ export function FixCommentCard({
       onClick={openable ? () => onOpen(card.id) : undefined}
     >
       {/* Thumb — the captured spot (page icon for whole-page comments; a calm
-          check once resolved, since the pin — the type source — is gone). */}
+          check once resolved). */}
       <div className="grid h-[50px] w-[62px] shrink-0 place-items-center rounded-[6px] brut-2 bg-[#F5E9C8]">
-        {!pin ? (
+        {done ? (
           <span className="grid h-6 w-6 place-items-center rounded-full brut-2 bg-mint text-[11px] font-black text-ink">
             ✓
           </span>
@@ -71,10 +68,10 @@ export function FixCommentCard({
         )}
       </div>
 
-      {/* Body — type badge, age, note. */}
+      {/* Body — type badge (dropped once resolved), age, note. */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          {noteType && (
+          {noteType && !done && (
             <span
               className={`rounded-full border-2 px-2 py-0.5 text-[9px] font-black tracking-wide text-ink ${
                 noteType === 'bug' ? 'border-orange bg-orangesoft' : 'border-blue bg-bluesoft'

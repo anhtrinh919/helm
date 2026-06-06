@@ -10,7 +10,6 @@ import type { LockedCapture } from '../../store/pins'
 interface DemoElement {
   label: string
   note: string
-  selector: string
   /** Fractions of the stage; converted to pixels at pick time. */
   fx: number
   fy: number
@@ -19,12 +18,10 @@ interface DemoElement {
 }
 
 const DEMO_ELEMENTS: DemoElement[] = [
-  { label: 'New ticket button', note: 'in app bar', selector: 'header > button.new-ticket', fx: 0.78, fy: 0.05, fw: 0.13, fh: 0.06 },
-  { label: 'Ticket #142 card', note: 'New column', selector: 'main .col-new article:nth-of-type(1)', fx: 0.08, fy: 0.3, fw: 0.26, fh: 0.22 },
-  { label: 'Search input', note: 'app bar', selector: 'header input[type=search]', fx: 0.52, fy: 0.05, fw: 0.2, fh: 0.06 },
+  { label: 'New ticket button', note: 'in app bar', fx: 0.78, fy: 0.05, fw: 0.13, fh: 0.06 },
+  { label: 'Ticket #142 card', note: 'New column', fx: 0.08, fy: 0.3, fw: 0.26, fh: 0.22 },
+  { label: 'Search input', note: 'app bar', fx: 0.52, fy: 0.05, fw: 0.2, fh: 0.06 },
 ]
-
-const DEMO_CROP = 'ZGVtby1jcm9w' // synthetic placeholder crop (mock only)
 
 export function SimulateClickPanel({
   stageSize,
@@ -44,8 +41,6 @@ export function SimulateClickPanel({
       boundingBox,
       pinX: el.fx + el.fw / 2,
       pinY: el.fy + el.fh / 2,
-      selector: el.selector,
-      screenshotCrop: DEMO_CROP,
     })
   }
 

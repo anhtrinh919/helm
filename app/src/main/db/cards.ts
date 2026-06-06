@@ -17,15 +17,20 @@ const TRANSITIONS: Record<CardStatus, CardStatus[]> = {
   waiting: ['building'],
 }
 
+/** Card reads carry the fix comment's renderer-safe dressing (type + page-ness)
+ *  so a fix_comment card describes itself — the board never joins UI feeds. */
+const CARD_SELECT = `SELECT c.*, fc.note_type AS fc_note_type, fc.pin_x AS fc_pin_x
+   FROM cards c LEFT JOIN fix_comments fc ON fc.card_id = c.id`
+
 export function getCard(db: Db, id: string): Card {
-  const row = db.prepare(`SELECT * FROM cards WHERE id = ?`).get(id) as CardRow | undefined
+  const row = db.prepare(`${CARD_SELECT} WHERE c.id = ?`).get(id) as CardRow | undefined
   if (!row) throw new NotFoundError('card not found')
   return toCard(row)
 }
 
 export function listCards(db: Db, projectId: string): Card[] {
   const rows = db
-    .prepare(`SELECT * FROM cards WHERE project_id = ? ORDER BY position ASC`)
+    .prepare(`${CARD_SELECT} WHERE c.project_id = ? ORDER BY c.position ASC`)
     .all(projectId) as CardRow[]
   return rows.map(toCard)
 }

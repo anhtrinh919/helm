@@ -125,6 +125,11 @@ export const Card = z.object({
   sessionId: z.string().nullable(),
   decisionPrompt: DecisionPrompt.nullable(),
   checkpoint: Checkpoint.nullable(),
+  /** Fix-comment dressing (Phase 3, `fix_comment` cards only): the comment's
+   *  type and whether it pointed at the whole page rather than one element.
+   *  Renderer-safe — derived from the fix record's non-private columns. */
+  noteType: NoteType.optional(),
+  pageLevel: z.boolean().optional(),
 })
 export type Card = z.infer<typeof Card>
 
@@ -318,12 +323,10 @@ export const StopDevServerRequest = z.object({ projectId: z.string() })
 
 export const RegisterPointRequest = z.object({
   projectId: z.string(),
-  // Element-level capture (all omitted for page-level comments). The renderer
-  // normally omits selector/screenshotCrop too — main merges its own pending
-  // capture so neither ever needs to round-trip through the renderer.
-  selector: z.string().optional(),
+  // Element-level capture is GEOMETRY ONLY (all omitted for page-level
+  // comments). The selector and screenshot crop never appear here by
+  // construction — main merges its own pending capture at register time.
   boundingBox: BoundingBox.optional(),
-  screenshotCrop: z.string().optional(),
   pinX: z.number().min(0).max(1).optional(),
   pinY: z.number().min(0).max(1).optional(),
   note: z.string().min(1).max(500),
@@ -342,7 +345,11 @@ export const StartFixSessionResponse = z.discriminatedUnion('queued', [
 export type StartFixSessionResponse = z.infer<typeof StartFixSessionResponse>
 
 export const ListPinsRequest = z.object({ projectId: z.string() })
-export const ListPinsResponse = z.object({ pins: z.array(FixCommentPin) })
+export const ListPinsResponse = z.object({
+  pins: z.array(FixCommentPin),
+  /** Cards queued behind the running fix — display state, resets on relaunch. */
+  queuedCardIds: z.array(z.string()),
+})
 export type ListPinsResponse = z.infer<typeof ListPinsResponse>
 
 export const PointModeRequest = z.object({ projectId: z.string() })
@@ -352,6 +359,9 @@ export const PointModeRequest = z.object({ projectId: z.string() })
 export const PinsUpdatePush = z.object({
   projectId: z.string(),
   pins: z.array(FixCommentPin),
+  /** Cards queued behind the running fix — pushed by the queue's one owner
+   *  (the orchestrator) so the board never keeps its own copy of this fact. */
+  queuedCardIds: z.array(z.string()),
 })
 export type PinsUpdatePush = z.infer<typeof PinsUpdatePush>
 

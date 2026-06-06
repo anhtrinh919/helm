@@ -14,6 +14,7 @@ import { NeedsYouHeadline } from './NeedsYouHeadline'
 import { AddItemModal } from './AddItemModal'
 import { PointModeToggle } from './PointModeOverlay'
 import { FixCommentCard } from './FixCommentCard'
+import { usePointFix, NO_QUEUED } from '../../store/pins'
 
 /** Pull "N of M" out of a "Step N of M: ..." label for the in-flight eyebrow. */
 function stepOfM(card: Card | null, total: number, doneCount: number): string {
@@ -35,15 +36,17 @@ export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.El
   const openSession = useProjects((s) => s.openSession)
   const [tab, setTab] = useState<BoardTab>('board')
   const [adding, setAdding] = useState(false)
-  // Cards waiting behind the running fix (in-memory display state — resets on relaunch).
-  const [queuedFixes, setQueuedFixes] = useState<Set<string>>(new Set())
+  // Cards queued behind the running fix — pushed by main, never tracked locally.
+  const queuedIds = usePointFix((s) => s.queued[projectId]) ?? NO_QUEUED
+  const loadPins = usePointFix((s) => s.loadPins)
 
   useEffect(() => {
     void loadBoard(projectId)
+    void loadPins(projectId) // queue membership survives a board remount
     return helm.events.onBoardUpdate((p) => {
       if (p.projectId === projectId) applyUpdate(p.card)
     })
-  }, [projectId, loadBoard, applyUpdate])
+  }, [projectId, loadBoard, loadPins, applyUpdate])
 
   // Fix-comment cards live on their own REPORTED shelf (all statuses, F50–F55);
   // they never mix into the build-spine sections.
@@ -66,22 +69,11 @@ export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.El
     return by
   }, [cards])
 
-  // A queued card leaves the local queue the moment its fix actually starts.
-  useEffect(() => {
-    setQueuedFixes((prev) => {
-      const next = new Set([...prev].filter((id) => cards.find((c) => c.id === id)?.status === 'waiting'))
-      return next.size === prev.size ? prev : next
-    })
-  }, [cards])
-
   const startFix = async (cardId: string): Promise<void> => {
     const res = await helm.fixSessions.start(projectId, cardId)
     if (isIpcError(res)) return
-    if (res.queued) {
-      setQueuedFixes((prev) => new Set(prev).add(cardId))
-    } else {
-      openSession(projectId, cardId)
-    }
+    // Queued: main pushes the new queue membership — nothing to track here.
+    if (!res.queued) openSession(projectId, cardId)
   }
 
   const titleOf = useMemo(() => {
@@ -222,7 +214,7 @@ export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.El
                           <FixCommentCard
                             key={c.id}
                             card={c}
-                            queued={queuedFixes.has(c.id)}
+                            queued={queuedIds.includes(c.id)}
                             onStartFix={(id) => void startFix(id)}
                             onOpen={(id) => openSession(projectId, id)}
                           />
