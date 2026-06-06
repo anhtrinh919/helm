@@ -36,7 +36,9 @@ export function CheckpointBlock({
           <img src={shot} alt="Preview of what was built" className="w-full" />
         ) : (
           <div className="grid h-40 place-items-center gap-1.5 text-center">
-            <span className="text-2xl">🖼️</span>
+            <span className="grid h-9 w-9 place-items-center rounded-full brut-2 bg-mint text-base font-black text-ink">
+              ✓
+            </span>
             <span className="text-sm font-semibold text-ink">
               {isFix ? `“${card.title}” — handled` : `“${card.title}” is built`}
             </span>
