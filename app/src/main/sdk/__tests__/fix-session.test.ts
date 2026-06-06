@@ -321,3 +321,55 @@ describe('checkpoint approve / reject for fix sessions', () => {
     expect(getCard(db, c2.id).status).toBe('building')
   })
 })
+
+describe('remaining contract errors + push shapes (Stage 4)', () => {
+  it('points:list on a missing project → not_found', async () => {
+    expect(await call(CH.pointsList, { projectId: 'nope' })).toEqual({ error: 'not_found' })
+  })
+
+  it('fix-sessions:start surfaces artifact_dir_failed when the working dir cannot be created', async () => {
+    const { writeFileSync, mkdtempSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    // artifactRoot pointing INSIDE a regular file → mkdir fails with ENOTDIR.
+    const dir = mkdtempSync(join(tmpdir(), 'helm-fix-'))
+    const blocker = join(dir, 'not-a-dir')
+    writeFileSync(blocker, 'x')
+    const badDev = new DevServerManager(db, () => {}, devDeps, join(blocker, 'projects'))
+    const badOrch = new SessionOrchestrator(db, () => null, fr.runner, badDev, queue)
+    handlers.clear()
+    registerPointsBridge(db, { capture, devServer, orchestrator: badOrch, fixQueue: queue, getWindow: () => null })
+    await goLive()
+    const { card } = await register()
+    // goLive persisted a working artifact dir — clear it so badDev must mkdir
+    // under the blocker file and hit ENOTDIR.
+    db.prepare('UPDATE projects SET artifact_dir = NULL WHERE id = ?').run(projectId)
+    const res = await call(CH.fixSessionsStart, { projectId, cardId: card.id })
+    expect(res.error).toBe('artifact_dir_failed')
+  })
+
+  it('points:register pushes board:update and a full points:update pin list', async () => {
+    const sends: { channel: string; payload: unknown }[] = []
+    const fakeWindow = {
+      isDestroyed: () => false,
+      webContents: { send: (channel: string, payload: unknown) => sends.push({ channel, payload }) },
+    }
+    handlers.clear()
+    registerPointsBridge(db, {
+      capture,
+      devServer,
+      orchestrator: orch,
+      fixQueue: queue,
+      getWindow: () => fakeWindow as never,
+    })
+    await goLive()
+    const { card } = await register()
+    const board = sends.find((s) => s.channel === CH.boardUpdate)
+    expect(board?.payload).toMatchObject({ projectId, cardId: card.id })
+    const pins = sends.find((s) => s.channel === CH.pointsUpdate) as { payload: { pins: unknown[] } } | undefined
+    expect(pins?.payload.pins).toHaveLength(1)
+    expect(pins?.payload.pins[0]).toMatchObject({ cardId: card.id, noteType: 'bug' })
+    expect(JSON.stringify(pins?.payload)).not.toContain('screenshot')
+    expect(JSON.stringify(pins?.payload)).not.toContain('selector')
+  })
+})
