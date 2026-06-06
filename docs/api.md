@@ -35,6 +35,41 @@ All channels use Zod-validated request/response shapes defined in `app/src/share
 | `project:background-status` | `{ projectId, backgroundStatus }` | When a session starts, pauses for decision, completes, or fails |
 | `question:update` | `{ sessionId, question: QuestionQueueItem }` | When a question is enqueued or answered |
 
+## Phase 2 — IPC Channels (Watch It Get Made)
+
+All new channels follow the same patterns as Phase 1: typed in `ipc-schemas.ts`, registered in `src/main/ipc/`, exposed via contextBridge, consumed via `src/renderer/src/bridge.ts`.
+
+### Invoke channels (renderer → main, returns result)
+
+| Channel | Request | Success response | Error conditions |
+|---------|---------|-----------------|-----------------|
+| `preview:get-state` | `{ projectId: string }` | `{ state: PreviewState }` | `not_found`; `db_unavailable` |
+| `devserver:start` | `{ projectId: string }` | `{ url: string }` | `not_found`; `no_artifact`; `already_running`; `start_failed` |
+| `devserver:stop` | `{ projectId: string }` | `{ stopped: true }` | `not_found`; `not_running` |
+| `sessions:start` (extended) | unchanged | unchanged | + `artifact_dir_failed` (new Phase 2 error) |
+
+### Push channels (main → renderer, no reply)
+
+| Channel | Payload | When emitted |
+|---------|---------|-------------|
+| `preview:update` | `{ projectId: string, state: PreviewState }` | Whenever preview state changes for a project (build starts, step completes, server goes live, snag/block/recovery) |
+
+### PreviewState union
+
+| Status | Payload fields | Meaning |
+|--------|---------------|---------|
+| `none` | — | No runnable artifact yet |
+| `building` | — | A build session is actively in progress |
+| `live` | `url: string` | Dev server is running; url is e.g. `http://localhost:3000` |
+| `snag` | — | Agent hit an auto-recoverable error; recovering automatically |
+| `blocked` | — | Truly blocking error; a Needs-you card has been raised on the board |
+
+### sessions:start extension (Phase 2)
+
+No new channel. When `sessions:start` is called for a project with an existing `artifact_dir`, the main process runs the session with a real working directory and full tools enabled instead of `tmpdir()` / `allowedTools: []`. Request/response shapes are unchanged. The extension is transparent to the renderer.
+
+---
+
 ### Feed event kinds
 
 | Kind | When used |
