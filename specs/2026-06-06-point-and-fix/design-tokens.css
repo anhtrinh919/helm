@@ -1,0 +1,73 @@
+/* Helm — Design Tokens (Phase 3: Point and Fix)
+ * Source of truth: pencil/v0.2-p3.pen — "v4" (Maximalist) variable set.
+ * Generated from the .pen `variables` map on 2026-06-06.
+ * The "v1-*" calm/Linear palette in the .pen is SUPERSEDED — do not use it.
+ * Phase 3 introduces NO new brand tokens. It reuses the Phase 1+2 system
+ * exactly — the only Phase-3-specific usages are the hover/selection ring
+ * opacity levels and the pin colors, which are derived from existing semantic
+ * accent tokens (not new variables).
+ * Do not edit by hand — regenerate if the design file changes.
+ */
+
+:root {
+  /* --- Surfaces (v4 Maximalist — inherited) --- */
+  --bg:            #FFEFD2; /* warm canvas (app background) */
+  --surface:       #FFF7E6; /* cards / panels (cream) */
+  --ink:           #1B1208; /* primary text */
+  --text-soft:     #5C4A33; /* secondary / muted text */
+
+  /* --- Accents (semantic, scarce — inherited v4) --- */
+  --primary:       #6B4BEB; /* violet — primary CTA / brand */
+  --primary-soft:  #D9CFFF;
+  --accent-pink:   #FF6F91; /* needs-you / attention */
+  --accent-pink-soft:   #FFD4DE;
+  --accent-blue:   #3A6CFF; /* building / active */
+  --accent-blue-soft:   #CFE0FF;
+  --accent-lime:   #C8F23A; /* done / success (fill) */
+  --accent-lime-deep:   #6E8500; /* done text-on-light */
+  --accent-mint:   #7FD4B0; /* done / resolved (alt) */
+  --accent-orange: #FF7A29; /* snag / blocked / warning */
+  --accent-orange-soft: #FFD6B8;
+
+  /* --- Status mapping (inherited) --- */
+  --status-building:  var(--accent-blue);
+  --status-done:      var(--accent-lime-deep);
+  --status-needs-you: var(--accent-pink);
+  --status-failed:    var(--accent-orange);
+
+  /* --- Phase 3 semantic colors for fix-comment type badges and pins --- */
+  /* "Something's broken" / bug type → warm red/orange accent */
+  --pin-bug:        var(--accent-orange);       /* bug pin fill */
+  --pin-bug-soft:   var(--accent-orange-soft);  /* bug badge background */
+  /* "Change this" / change type → blue accent */
+  --pin-change:     var(--accent-blue);         /* change pin fill */
+  --pin-change-soft: var(--accent-blue-soft);   /* change badge background */
+
+  /* --- Point-mode overlay (Phase 3 — derived from existing tokens) --- */
+  /* Hover highlight ring on the element under cursor */
+  --overlay-ring:       var(--accent-blue);     /* 2px solid ring */
+  --overlay-ring-fill:  #3A6CFF1A;              /* accent-blue at ~10% opacity fill */
+  /* Selection lock ring (element clicked and locked) */
+  --overlay-ring-locked-fill: #3A6CFF33;        /* accent-blue at ~20% opacity fill */
+  /* Cream veil applied to non-selected area when selection is locked */
+  --preview-veil-light: #FFEFD2CC;              /* inherited from Phase 2 */
+
+  /* --- Live Preview surfaces (inherited Phase 2) --- */
+  --preview-stage:        #F7F2EA;
+  --preview-veil-strong:  #FFEFD2E0;
+  --preview-veil:         #FFEFD2D9;
+  --window-dot-close:     #FF5F57;
+  --window-dot-min:       #FFBD2E;
+  --window-dot-max:       #28C940;
+  --shadow-soft:          #00000015;
+  --shadow-medium:        #00000022;
+
+  /* --- Type (inherited v4) --- */
+  --font-display: "Fraunces", Georgia, serif;             /* headings / editorial */
+  --font-ui:      "Space Grotesk", system-ui, sans-serif; /* UI / body */
+  --font-mono:    "JetBrains Mono", ui-monospace, monospace; /* literals — NOT used in Phase 3 */
+
+  /* --- Canvas --- */
+  --window-w: 1440px;
+  --window-h: 900px;
+}
