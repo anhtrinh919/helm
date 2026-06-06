@@ -1,0 +1,323 @@
+import { describe, expect, it, beforeEach, vi } from 'vitest'
+import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { SessionCallbacks, SessionHandle, StartSessionOptions } from '../session-runner'
+
+/**
+ * Group 4 — fix-session orchestration: register a point, start a fix (or queue
+ * it), approve → preview restart + queue advance, reject → same session retries.
+ * Drives the real IPC handlers with electron mocked, the same harness as the
+ * contract-flow suite.
+ */
+
+const { handlers } = vi.hoisted(() => ({
+  handlers: new Map<string, (e: unknown, raw: unknown) => unknown>(),
+}))
+vi.mock('electron', () => ({
+  ipcMain: { handle: (ch: string, fn: (e: unknown, raw: unknown) => unknown) => handlers.set(ch, fn) },
+}))
+
+import { openDatabase, type Db } from '../../db/connection'
+import { createProject } from '../../db/projects'
+import { createCard, getCard } from '../../db/cards'
+import { getSession } from '../../db/sessions'
+import { getEvents } from '../../db/feed-events'
+import { getFixComment } from '../../db/fix-comments'
+import { SessionOrchestrator } from '../session-orchestrator'
+import { DevServerManager, type DevServerDeps } from '../dev-server-manager'
+import { FixSessionQueue } from '../fix-session-queue'
+import { PointCaptureService, type GuestView } from '../point-capture-service'
+import { registerDataBridge } from '../../ipc/data-bridge'
+import { registerPointsBridge } from '../../ipc/points-bridge'
+import { CH } from '../../../shared/ipc-schemas'
+
+const RECT = { x: 10, y: 20, width: 120, height: 40 }
+const resultSuccess = (): SDKMessage => ({ type: 'result', subtype: 'success' }) as unknown as SDKMessage
+
+/** Multi-session fake runner: records every started run + its options. */
+function fakeRunner(): {
+  runner: (o: StartSessionOptions, cb: SessionCallbacks) => SessionHandle
+  runs: { opts: StartSessionOptions; cb: SessionCallbacks }[]
+  last: () => { opts: StartSessionOptions; cb: SessionCallbacks }
+} {
+  const runs: { opts: StartSessionOptions; cb: SessionCallbacks }[] = []
+  const runner = (opts: StartSessionOptions, cb: SessionCallbacks): SessionHandle => {
+    runs.push({ opts, cb })
+    return { id: `fake-${runs.length}`, steer: async () => {}, reply: () => {}, close: async () => {} }
+  }
+  return { runner, runs, last: () => runs[runs.length - 1]! }
+}
+
+function fakeDevDeps(): DevServerDeps & { restarts: string[] } {
+  const restarts: string[] = []
+  return {
+    restarts,
+    readManifest: () => ({ startCommand: 'npm run dev', port: 4444 }),
+    spawnServer: (_c, m) => {
+      restarts.push('spawn')
+      return { pid: 7, url: `http://localhost:${m.port}`, kill: () => {}, onExit: () => {} }
+    },
+    probe: async () => true,
+    pidAlive: () => true,
+  }
+}
+
+function fakeGuest(): GuestView & { emitConsole: (line: string) => void } {
+  const subs = new Set<(line: string) => void>()
+  return {
+    emitConsole: (line) => subs.forEach((cb) => cb(line)),
+    executeJavaScript: async () => undefined,
+    captureRegion: async () => 'Y3JvcA==',
+    onConsole: (cb) => {
+      subs.add(cb)
+      return () => subs.delete(cb)
+    },
+  }
+}
+
+const call = async (ch: string, payload?: unknown): Promise<any> => handlers.get(ch)!({}, payload)
+
+let db: Db
+let fr: ReturnType<typeof fakeRunner>
+let devDeps: ReturnType<typeof fakeDevDeps>
+let devServer: DevServerManager
+let queue: FixSessionQueue
+let orch: SessionOrchestrator
+let guest: ReturnType<typeof fakeGuest>
+let capture: PointCaptureService
+let captures: unknown[]
+let projectId: string
+
+beforeEach(() => {
+  handlers.clear()
+  db = openDatabase(':memory:')
+  fr = fakeRunner()
+  devDeps = fakeDevDeps()
+  devServer = new DevServerManager(db, () => {}, devDeps, '/tmp/helm-fix-tests')
+  queue = new FixSessionQueue()
+  orch = new SessionOrchestrator(db, () => null, fr.runner, devServer, queue)
+  guest = fakeGuest()
+  captures = []
+  capture = new PointCaptureService(
+    {
+      listGuests: () => [{ url: 'http://localhost:4444/', view: guest }],
+      previewUrl: (pid) => {
+        const s = devServer.getState(pid)
+        return s.status === 'live' ? s.url : null
+      },
+    },
+    (pid, g) => captures.push({ pid, g }),
+    () => {},
+  )
+  registerDataBridge(db, () => null, { devServer, orchestrator: orch })
+  registerPointsBridge(db, { capture, devServer, orchestrator: orch, fixQueue: queue, getWindow: () => null })
+
+  const p = createProject(db, 'FixProj')
+  projectId = p.id
+})
+
+/** Bring the project's preview to `live` so point-and-fix is allowed. */
+async function goLive(): Promise<void> {
+  devServer.ensureArtifactDir(projectId)
+  await devServer.start(projectId)
+}
+
+const register = (over: Record<string, unknown> = {}): Promise<any> =>
+  call(CH.pointsRegister, {
+    projectId,
+    selector: 'main > button#submit',
+    boundingBox: RECT,
+    screenshotCrop: 'Y3JvcA==',
+    pinX: 0.42,
+    pinY: 0.61,
+    note: 'This button looks broken',
+    noteType: 'bug',
+    ...over,
+  })
+
+describe('points:register', () => {
+  it('creates a waiting fix-comment card paired with its visual context', async () => {
+    await goLive()
+    const res = await register()
+    expect(res.card).toMatchObject({ type: 'fix_comment', status: 'waiting', title: 'This button looks broken' })
+    const fix = getFixComment(db, res.card.id)
+    expect(fix.selector).toBe('main > button#submit')
+    expect(fix.screenshotCrop).toBe('Y3JvcA==')
+    expect(fix.pinX).toBeCloseTo(0.42)
+  })
+
+  it('rejects when the preview is not live', async () => {
+    expect(await register()).toEqual({ error: 'preview_not_live' })
+  })
+
+  it('rejects an empty note as validation_failed', async () => {
+    await goLive()
+    const res = await register({ note: '' })
+    expect(res.error).toBe('validation_failed')
+  })
+
+  it('unknown project → not_found', async () => {
+    expect(await register({ projectId: 'nope' })).toEqual({ error: 'not_found' })
+  })
+
+  it('merges the pending capture when the renderer sends geometry only', async () => {
+    await goLive()
+    capture.activate(projectId)
+    guest.emitConsole(
+      '__HELM_POINT__' + JSON.stringify({ selector: 'nav > a:nth-of-type(2)', rect: RECT, px: 0.5, py: 0.25 }),
+    )
+    await vi.waitFor(() => expect(captures).toHaveLength(1))
+    const res = await register({ selector: undefined, screenshotCrop: undefined, pinX: 0.5, pinY: 0.25 })
+    const fix = getFixComment(db, res.card.id)
+    expect(fix.selector).toBe('nav > a:nth-of-type(2)')
+    expect(fix.screenshotCrop).toBe('Y3JvcA==')
+  })
+
+  it('page-level comment stores no visual context', async () => {
+    await goLive()
+    const res = await register({
+      selector: undefined,
+      boundingBox: undefined,
+      screenshotCrop: undefined,
+      pinX: undefined,
+      pinY: undefined,
+      note: 'This page feels cramped',
+      noteType: 'change',
+    })
+    const fix = getFixComment(db, res.card.id)
+    expect(fix.selector).toBeNull()
+    expect(fix.pinX).toBeNull()
+  })
+})
+
+describe('fix-sessions:start', () => {
+  it('starts the fix: session opens, card → building, prompt carries the visual context', async () => {
+    await goLive()
+    const { card } = await register()
+    const res = await call(CH.fixSessionsStart, { projectId, cardId: card.id })
+    expect(res.queued).toBe(false)
+    expect(res.session).toBeTruthy()
+    expect(getCard(db, card.id).status).toBe('building')
+    expect(getSession(db, res.session.id).status).toBe('active')
+    const prompt = fr.last().opts.prompt
+    expect(prompt).toContain('This button looks broken')
+    expect(prompt).toContain('main > button#submit')
+    expect(prompt).toContain('Fix ONLY this')
+    expect(fr.last().opts.permissionMode).toBe('bypassPermissions')
+  })
+
+  it('a second start while one runs queues the card (stored status stays waiting)', async () => {
+    await goLive()
+    const { card: c1 } = await register()
+    const { card: c2 } = await register({ note: 'Header is too dark', noteType: 'change' })
+    await call(CH.fixSessionsStart, { projectId, cardId: c1.id })
+    const res = await call(CH.fixSessionsStart, { projectId, cardId: c2.id })
+    expect(res).toEqual({ session: null, queued: true })
+    expect(getCard(db, c2.id).status).toBe('waiting')
+    // idempotent re-start while queued
+    expect(await call(CH.fixSessionsStart, { projectId, cardId: c2.id })).toEqual({
+      session: null,
+      queued: true,
+    })
+  })
+
+  it('non-fix cards and unknown cards → not_found', async () => {
+    await goLive()
+    const feature = createCard(db, projectId, 'feature', 'X')
+    expect(await call(CH.fixSessionsStart, { projectId, cardId: feature.id })).toEqual({ error: 'not_found' })
+    expect(await call(CH.fixSessionsStart, { projectId, cardId: 'nope' })).toEqual({ error: 'not_found' })
+  })
+
+  it('a card without its fix record → no_visual_context', async () => {
+    await goLive()
+    const bare = createCard(db, projectId, 'fix_comment', 'orphan', 'user_added', 'waiting')
+    expect(await call(CH.fixSessionsStart, { projectId, cardId: bare.id })).toEqual({
+      error: 'no_visual_context',
+    })
+  })
+
+  it('an already-finished card → not_waiting', async () => {
+    await goLive()
+    const { card } = await register()
+    await call(CH.fixSessionsStart, { projectId, cardId: card.id })
+    expect(await call(CH.fixSessionsStart, { projectId, cardId: card.id })).toEqual({
+      error: 'not_waiting',
+    })
+  })
+})
+
+describe('checkpoint approve / reject for fix sessions', () => {
+  async function startAndFinishFix(): Promise<{ cardId: string; sessionId: string }> {
+    const { card } = await register()
+    const res = await call(CH.fixSessionsStart, { projectId, cardId: card.id })
+    fr.last().cb.onMessage(resultSuccess())
+    fr.last().cb.onClose()
+    return { cardId: card.id, sessionId: res.session.id }
+  }
+
+  it('the fix runs to a fix-flavored checkpoint', async () => {
+    await goLive()
+    const { cardId, sessionId } = await startAndFinishFix()
+    const card = getCard(db, cardId)
+    expect(card.checkpoint?.status).toBe('pending')
+    expect(card.status).toBe('building')
+    const events = getEvents(db, sessionId)
+    expect(events.some((e) => e.kind === 'checkpoint' && e.text.includes('the fix'))).toBe(true)
+  })
+
+  it('approve: card → done, preview restarts, queued fix auto-starts', async () => {
+    await goLive()
+    const { cardId } = await startAndFinishFix()
+    const { card: c2 } = await register({ note: 'Header is too dark', noteType: 'change' })
+    await call(CH.fixSessionsStart, { projectId, cardId: c2.id }) // queued
+    const spawnsBefore = devDeps.restarts.length
+    const runsBefore = fr.runs.length
+
+    await call(CH.cardsApproveCheckpoint, { cardId, verdict: 'approved' })
+    expect(getCard(db, cardId).status).toBe('done')
+
+    await vi.waitFor(() => {
+      expect(devDeps.restarts.length).toBeGreaterThan(spawnsBefore) // preview refreshed
+      expect(fr.runs.length).toBe(runsBefore + 1) // queued fix auto-started
+    })
+    expect(getCard(db, c2.id).status).toBe('building')
+    expect(fr.last().opts.prompt).toContain('Header is too dark')
+  })
+
+  it('reject: the session retries with the note, then reaches a new checkpoint', async () => {
+    await goLive()
+    const { cardId, sessionId } = await startAndFinishFix()
+    const runsBefore = fr.runs.length
+
+    await call(CH.cardsApproveCheckpoint, {
+      cardId,
+      verdict: 'flagged',
+      flagNote: 'Still looks wrong on hover',
+    })
+
+    expect(fr.runs.length).toBe(runsBefore + 1) // fresh engine run, same session row
+    expect(fr.last().opts.prompt).toContain('Still looks wrong on hover')
+    expect(getSession(db, sessionId).status).toBe('active')
+    expect(getCard(db, cardId).status).toBe('building')
+    const events = getEvents(db, sessionId)
+    expect(events.some((e) => e.kind === 'steering' && e.text.includes('Still looks wrong'))).toBe(true)
+
+    // The retry finishes → a NEW pending checkpoint on the same card.
+    fr.last().cb.onMessage(resultSuccess())
+    fr.last().cb.onClose()
+    expect(getCard(db, cardId).checkpoint?.status).toBe('pending')
+  })
+
+  it('a failed fix frees the slot and the queued card auto-starts', async () => {
+    await goLive()
+    const { card: c1 } = await register()
+    const { card: c2 } = await register({ note: 'Second thing', noteType: 'bug' })
+    await call(CH.fixSessionsStart, { projectId, cardId: c1.id })
+    await call(CH.fixSessionsStart, { projectId, cardId: c2.id }) // queued
+    const runsBefore = fr.runs.length
+
+    fr.last().cb.onError('boom')
+    expect(getCard(db, c1.id).status).toBe('failed')
+    expect(fr.runs.length).toBe(runsBefore + 1)
+    expect(getCard(db, c2.id).status).toBe('building')
+  })
+})

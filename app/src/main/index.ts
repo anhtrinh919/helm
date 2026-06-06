@@ -14,6 +14,7 @@ import { DevServerManager } from './sdk/dev-server-manager'
 import { WizardOrchestrator } from './sdk/wizard-orchestrator'
 import { PointCaptureService } from './sdk/point-capture-service'
 import { defaultPointCaptureDeps } from './sdk/point-capture-electron'
+import { FixSessionQueue } from './sdk/fix-session-queue'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -63,7 +64,8 @@ void app.whenReady().then(() => {
     join(app.getPath('userData'), 'projects'),
   )
 
-  const orchestrator = new SessionOrchestrator(db, getWindow, undefined, devServer)
+  const fixQueue = new FixSessionQueue()
+  const orchestrator = new SessionOrchestrator(db, getWindow, undefined, devServer, fixQueue)
   const wizard = new WizardOrchestrator(db)
 
   // Point mode (Phase 3): clicks inside the embedded app come back as captures.
@@ -75,11 +77,17 @@ void app.whenReady().then(() => {
   )
 
   registerFeedBridge(db, getWindow)
-  registerDataBridge(db, getWindow)
+  registerDataBridge(db, getWindow, { devServer, orchestrator })
   registerSessionBridge(db, orchestrator)
   registerWizardBridge(db, wizard, getWindow)
   registerPreviewBridge(db, devServer)
-  registerPointsBridge(db, pointCapture)
+  registerPointsBridge(db, {
+    capture: pointCapture,
+    devServer,
+    orchestrator,
+    fixQueue,
+    getWindow,
+  })
 
   createWindow()
   // Reconnect or restart each project's dev server so the Live Preview survives

@@ -20,13 +20,24 @@ import {
 import { createProject, getProject, listProjects } from '../db/projects'
 import {
   createCard,
+  getCard,
   listCards,
   updateCardStatus,
   updateCheckpoint,
   promoteNextPlanned,
 } from '../db/cards'
+import { listOpenPins } from '../db/fix-comments'
+import type { DevServerManager } from '../sdk/dev-server-manager'
+import type { SessionOrchestrator } from '../sdk/session-orchestrator'
 
 type GetWindow = () => BrowserWindow | null
+
+/** Phase 3 hooks for fix-comment checkpoints: approve refreshes the preview and
+ *  advances the fix queue; reject sends the note back into the same session. */
+export interface FixCheckpointDeps {
+  devServer: DevServerManager
+  orchestrator: SessionOrchestrator
+}
 
 function mapError(e: unknown): IpcError {
   if (e instanceof InvalidTransitionError) return { error: 'invalid_transition', from: e.from, to: e.to }
@@ -40,10 +51,13 @@ function mapError(e: unknown): IpcError {
   return { error: 'db_write_failed', message: e instanceof Error ? e.message : 'unknown error' }
 }
 
-export function registerDataBridge(db: Db, getWindow: GetWindow): void {
-  const pushBoard = (projectId: string, card: Card): void => {
+export function registerDataBridge(db: Db, getWindow: GetWindow, fix?: FixCheckpointDeps): void {
+  const send = (channel: string, payload: unknown): void => {
     const win = getWindow()
-    if (win && !win.isDestroyed()) win.webContents.send(CH.boardUpdate, { projectId, cardId: card.id, card })
+    if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
+  }
+  const pushBoard = (projectId: string, card: Card): void => {
+    send(CH.boardUpdate, { projectId, cardId: card.id, card })
   }
 
   ipcMain.handle(CH.projectsList, () => {
@@ -98,12 +112,36 @@ export function registerDataBridge(db: Db, getWindow: GetWindow): void {
     try {
       const { cardId, verdict, flagNote } = ApproveCheckpointRequest.parse(raw)
       let card = updateCheckpoint(db, cardId, verdict, flagNote)
+
+      // Fix-comment cards (Phase 3): approve lands the fix — refresh the
+      // preview, resolve the pin, advance the queue. Reject retries the session.
+      if (card.type === 'fix_comment' && fix) {
+        if (verdict === 'approved') {
+          if (card.status === 'building') card = updateCardStatus(db, cardId, 'done')
+          pushBoard(card.projectId, card)
+          send(CH.pointsUpdate, { projectId: card.projectId, pins: listOpenPins(db, card.projectId) })
+          // Bring the refreshed app up; state changes push preview:update on
+          // their own. The queue advances regardless of how the restart goes.
+          void fix.devServer
+            .restart(card.projectId)
+            .catch(() => {})
+            .finally(() => fix.orchestrator.maybeStartNextFix(card.projectId))
+        } else {
+          if (card.sessionId) fix.orchestrator.resumeWithRejection(card.sessionId, flagNote ?? '')
+          card = getCard(db, cardId)
+          pushBoard(card.projectId, card)
+        }
+        return { card }
+      }
+
       if (verdict === 'approved') {
         // Approving a finished build completes the item and pulls the next one up.
         if (card.status === 'building') card = updateCardStatus(db, cardId, 'done')
         pushBoard(card.projectId, card)
         const promoted = promoteNextPlanned(db, card.projectId)
         if (promoted) pushBoard(card.projectId, promoted)
+        // A freed spotlight lets a queued fix start (fix-after-build queueing).
+        fix?.orchestrator.maybeStartNextFix(card.projectId)
       } else {
         pushBoard(card.projectId, card)
       }

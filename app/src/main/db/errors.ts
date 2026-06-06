@@ -64,3 +64,20 @@ export class DevServerNotRunningError extends Error {
 export class ArtifactDirError extends Error {
   readonly code = 'artifact_dir_failed' as const
 }
+
+/* ---- Phase 3: point-and-fix errors ---- */
+
+/** Point-and-fix needs the preview to be live (a running app to point at). */
+export class PreviewNotLiveError extends Error {
+  readonly code = 'preview_not_live' as const
+}
+
+/** Tried to start a fix on a card that isn't waiting (already building or done). */
+export class NotWaitingError extends Error {
+  readonly code = 'not_waiting' as const
+}
+
+/** The fix_comments record for this card is missing (data integrity error). */
+export class NoVisualContextError extends Error {
+  readonly code = 'no_visual_context' as const
+}
