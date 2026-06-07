@@ -47,3 +47,10 @@ external-pencil
 1. Each action (comment, bug report, tweak, feature request) spawns a separate context-loaded scoped session (Ph3 + Ph4)
 2. All sessions fix/build in parallel (Ph4)
 3. Results land back on the board (Ph4)
+
+**Build on the Stage 1 rail (new user path):**
+1. Describe the goal — the app generates a rail of milestones toward the original build goal (Ph3.5)
+2. Rail steps unlock in order as each prerequisite completes — progress shown as "N of M steps" (Ph3.5)
+3. Each completed rail step ends at a dogfoodable checkpoint — test it, report bugs, request tweaks (Ph3.5)
+4. When the last rail step completes, a celebration moment marks the Stage 1 → Stage 2 transition (Ph3.5)
+5. Stage 2 opens the full kanban board — freeform, parallel sessions, user-driven backlog (Ph3.5)

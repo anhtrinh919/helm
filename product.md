@@ -16,9 +16,12 @@ At end-state, Helm is a single macOS desktop window that replaces the terminal e
 | Reviewable-Result Checkpoint | "Here's what I built — does this look right?" screenshot/click-through per finished item | Ph1 |
 | Live Preview | The actual running app embedded in the Helm window, not a prototype | Ph2 |
 | Point-and-Fix Overlay | Click any element in the Live Preview, leave a comment or bug, spawn a targeted fix session | Ph3 |
-| Decisions Log | Read-only log of every decision made, with reasoning captured | Ph4 |
-| Progress Timeline | Visual history of what was built, when, and what changed | Ph4 |
-| Docs View | Auto-generated living documentation for the project being built | Ph4 |
+| Decisions Log | Read-only log of every decision made, with reasoning captured | Ph3 (real data) |
+| Progress Timeline | Visual history of what was built, when, and what changed | Ph3 (real data) |
+| Docs View | Auto-generated living documentation for the project being built | Ph3 (real data) |
+| Stage 1 Rail | Ordered spine of milestones drawn from the build goal; steps unlock in order; shows "N of M steps to your first working app" | Ph3.5 |
+| Rail Step Checkpoint | Per-milestone dogfood moment — test what was just built, report bugs, request tweaks before the next step unlocks | Ph3.5 |
+| Stage 1 Celebration | Full-screen moment marking "Your app now does what you set out to build" — the Stage 1 → Stage 2 transition | Ph3.5 |
 
 ## Navigation Structure
 
@@ -29,9 +32,11 @@ Scoped Session → [agent blocks on decision] → Needs-you headline on board
 Build-Spine Board → [Needs-you headline] → answer inline → build resumes
 Scoped Session → [item completes] → Reviewable-Result Checkpoint → [approve] → next item Up next
 Live Preview → [click element] → Point-and-Fix Overlay → [submit] → Scoped Session (fix session)
-Build-Spine Board → [decisions tab] → Decisions Log (Ph4)
-Build-Spine Board → [progress tab] → Progress Timeline (Ph4)
-Build-Spine Board → [docs tab] → Docs View (Ph4)
+Build-Spine Board → [decisions tab] → Decisions Log (Ph3, real data)
+Build-Spine Board → [progress tab] → Progress Timeline (Ph3, real data)
+Build-Spine Board → [docs tab] → Docs View (Ph3, real data)
+Stage 1 Rail → [step completes] → Rail Step Checkpoint → [approve] → next rail step unlocks (Ph3.5)
+Stage 1 Rail → [all steps complete] → Stage 1 Celebration → [continue] → Build-Spine Board (Stage 2, Ph3.5)
 
 ## Core Feature Surface
 
@@ -44,14 +49,19 @@ Build-Spine Board → [docs tab] → Docs View (Ph4)
 - **Durable Background Sessions:** sessions are background processes that survive project-switch, window-refresh, and app quit/relaunch; background work stays visible in the rail
 - **Live Preview (Ph2):** the actual app being built runs inside Helm — not a screenshot, not a link, the real local app
 - **Point-and-Fix (Ph3):** click any element in the live preview, annotate it, spawn a targeted agent session that has full visual context
-- **Parallel Sessions (Ph4):** each action on the board spawns its own context-loaded session; all run simultaneously; results land back as resolved items
+- **Parallel Sessions (Ph3):** each action on the board spawns its own context-loaded session; all run simultaneously; results land back as resolved items
+- **Stage 1 Rail (Ph3.5):** ordered, prerequisite-enforced spine of milestones shown as a journey toward the original build goal; steps unlock in order; designed for first-time users who have never built anything
+- **Rail Step Checkpoint (Ph3.5):** each rail step ends at a dogfoodable moment — the user tests what was just built, reports bugs, and requests tweaks before the next step unlocks; large out-of-scope requests are captured as backlog cards, not acted on
+- **Stage 1 → Stage 2 Transition (Ph3.5):** explicit celebration moment when the last rail step completes; marks the end of the structured first-build journey; Stage 2 opens the full freeform board
+- **Stage 2 Board (Ph3.5):** the existing kanban board, now explicitly framed as Stage 2 — freeform, parallel sessions, point-and-fix cards, user-driven backlog; experienced users start here directly
 
 ## Named Flows
 
 - **Start a project:** Type a sentence (Ph1) → Agent grills and plans (Ph1) → Approve the plan (Ph1) → Agent builds, spine updates live (Ph1)
 - **Steer the build (core loop):** Watch the spine — done / building / left (Ph1) → Review what's made via checkpoint (Ph1) → Make a decision when prompted from the Needs-you headline (Ph1) → Steer mid-build via interrupt/redirect/look-closer (Ph1) → Agent continues (Ph1)
 - **Fix something:** Spot an issue via checkpoint or as a failed item (Ph1) → Point at it in live preview and leave a comment (Ph3) → Focused agent picks it up and fixes (Ph3) → Verify resolved (Ph3)
-- **Run many at once:** Each action spawns a separate context-loaded scoped session (Ph3 + Ph4) → All sessions fix/build in parallel (Ph4) → Results land back on the spine (Ph4)
+- **Run many at once:** Each action spawns a separate context-loaded scoped session (Ph3 + Ph4) → All sessions fix/build in parallel (Ph3) → Results land back on the spine (Ph3)
+- **Build on the Stage 1 rail:** Describe the goal (Ph3.5) → Rail of ordered milestones generated (Ph3.5) → Steps unlock in order as each completes (Ph3.5) → Each step ends at a dogfoodable checkpoint (Ph3.5) → Last step triggers Stage 1 celebration (Ph3.5) → Stage 2 board opens (Ph3.5)
 
 ## Phase 1 Skeleton Scope
 
@@ -64,6 +74,9 @@ Build-Spine Board → [docs tab] → Docs View (Ph4)
 - **Durable Background Sessions** — live (full Phase 1: sessions persist across quit/relaunch; background project status visible in rail)
 - **Live Preview** — stubbed (Phase 2: shell placeholder; "Unlocks in Phase 2")
 - **Point-and-Fix Overlay** — stubbed (Phase 3: not designed in Phase 1; "Unlocks in Phase 3")
-- **Decisions Log** — stubbed (Phase 4: tab visible; "Unlocks in Phase 4")
-- **Progress Timeline** — stubbed (Phase 4: tab visible; "Unlocks in Phase 4")
-- **Docs View** — stubbed (Phase 4: tab visible; "Unlocks in Phase 4")
+- **Decisions Log** — live (Phase 3: wired to real DB queries; no stubs remain)
+- **Progress Timeline** — live (Phase 3: wired to real DB queries; no stubs remain)
+- **Docs View** — live (Phase 3: wired to real DB queries; no stubs remain)
+- **Stage 1 Rail** — stubbed (Phase 3.5: not built; "Unlocks in Phase 3.5")
+- **Rail Step Checkpoint** — stubbed (Phase 3.5: not built; "Unlocks in Phase 3.5")
+- **Stage 1 Celebration** — stubbed (Phase 3.5: not built; "Unlocks in Phase 3.5")

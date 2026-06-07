@@ -70,6 +70,38 @@ No new channel. When `sessions:start` is called for a project with an existing `
 
 ---
 
+## Phase 3 — IPC Channels (Point and Fix)
+
+All new channels follow the same patterns as prior phases: typed in `ipc-schemas.ts`, registered in `src/main/ipc/`, exposed via contextBridge.
+
+### Invoke channels (renderer → main, returns result)
+
+| Channel | Request | Success response | Error conditions |
+|---------|---------|-----------------|-----------------|
+| `comments:create` | `{ projectId, type, x, y, elementSelector?, screenshotDataUrl?, text }` | `Comment` | Project not found; invalid type; DB write failure |
+| `comments:list` | `{ projectId }` | `Comment[]` | Project not found; DB read failure |
+| `comments:get` | `{ commentId }` | `Comment` | Comment not found |
+| `comments:resolve` | `{ commentId, sessionId }` | `Comment` | Comment not found; already resolved |
+| `comments:start-fix-session` | `{ commentId }` | `{ sessionId: string }` | Comment not found; project not found; fix session already active |
+
+### Comment type
+
+```
+comments (id TEXT PK, project_id TEXT FK, type TEXT -- 'comment'|'bug'|'tweak',
+          x REAL, y REAL, element_selector TEXT,
+          screenshot_data_url TEXT, text TEXT,
+          status TEXT -- 'open'|'in_progress'|'resolved',
+          session_id TEXT FK, created_at INTEGER, resolved_at INTEGER)
+```
+
+### Push channels (main → renderer, no reply)
+
+| Channel | Payload | When emitted |
+|---------|---------|-------------|
+| `comment:update` | `{ projectId, comment: Comment }` | When a comment status changes (open → in_progress → resolved) |
+
+---
+
 ### Feed event kinds
 
 | Kind | When used |

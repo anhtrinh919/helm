@@ -44,4 +44,20 @@
 
 **`artifact_dir` path uses `app.getPath('userData')/projects/<projectId>/`** — Why: `userData` is the correct Electron path for app-managed persistent data (not user-visible documents). Using a stable UUID-based subdirectory means the path survives app reinstall as long as the SQLite DB (also in `userData`) is preserved. Alternatives: `~/Helm Projects/<project-name>/` — more user-visible, but name changes would break path stability.
 
-**`helm.json` contract file as the agent's single I/O handshake** — Why: the build agent reads `helm.json` on entry (gets context: what to build, what's been built, what directory to use) and writes `helm.json` on exit (records: what it built, what dev command to run). This two-way file contract keeps the session orchestrator decoupled from the agent's internal reasoning — it only needs to read the output file to know what to do next. Alternatives: embed structured output in the agent's final narration text — rejected because it ties the orchestrator to prompt engineering and makes the gate harder to maintain.
+**`helm.json` contract file as the agent's single I/O handshake** (continued above)
+
+---
+
+### Phase 3 Decisions (implementation-time)
+
+**Fix sessions reuse the existing session-orchestrator stack — no new session type.**
+Why: the point-and-fix session is a scoped build session with a richer context payload (which element, screenshot, comment text). Creating a parallel session type would duplicate the orchestrator, runner, and event-transformer maintenance surface. The correct design is one engine with type-discriminated context loading at session start. Alternatives: a `FixSessionOrchestrator` class — rejected because it would need to stay in sync with every future change to `SessionOrchestrator`.
+
+**Annotation layer mounted in Helm renderer, not injected into the `<webview>`.**
+Why: injecting click handlers into the embedded app's DOM via `executeJavaScript` is fragile and app-specific. The overlay is an absolute-positioned SVG layer in the Helm renderer that sits above the `<webview>`, intercepts pointer events at the Helm DOM level, and uses `webview.executeJavaScript` only for coordinate resolution. This keeps the embedded app unmodified. Alternatives: in-page injection — rejected because it requires the embedded app to be in a known framework and breaks if the app renders dynamically.
+
+**Comment cards land in the same Kanban columns as build cards, distinguished by type-discriminated visual treatment.**
+Why: a separate "fix queue" column or list would add board complexity the user doesn't need — "planned / building / done" applies equally to fixes and features. The distinction is visual: border color and icon per card type. Alternatives: a parallel fix board — rejected because the user shouldn't need two boards to understand one project's state.
+
+**Ad-hoc Phase 4 deliverables (real history tabs, parallel sessions) shipped on the Phase 3 branch post-review.**
+Why: the review at 85/100 cleared the Phase 3 scope; the ad-hoc work (wiring Decisions/Progress/Docs tabs to real DB queries, removing one-at-a-time session queue) was bounded and did not touch the reviewed code paths. Landing it on the same branch before merge preserved a clean git history and avoided a partial Phase 4 branch. Alternatives: a separate `phase-4-partial` branch — rejected because the scope was small, DB-layer-only, and could be verified without a new review cycle. — Why: the build agent reads `helm.json` on entry (gets context: what to build, what's been built, what directory to use) and writes `helm.json` on exit (records: what it built, what dev command to run). This two-way file contract keeps the session orchestrator decoupled from the agent's internal reasoning — it only needs to read the output file to know what to do next. Alternatives: embed structured output in the agent's final narration text — rejected because it ties the orchestrator to prompt engineering and makes the gate harder to maintain.

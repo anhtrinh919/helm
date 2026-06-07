@@ -4,6 +4,37 @@
 
 *(Auto-generated — do not edit manually)*
 
+## 2026-06-07
+
+### Phase 3.5 — The Rail (prep)
+
+- Spec Mode 3: living docs updated for Phase 3 wrap; branch merged to main
+
+### Phase 3 — Point and Fix (ad-hoc post-review additions)
+
+- Phase 4 wrap: rich mock history data + seed-demo script
+- Phase 4: parallel sessions + real history tabs (no more stubs)
+- Phase 3 handoff cleanup: null stale dogfood PID
+- Phase 3 → 4 handoff: the session brief for whoever builds the Super-Team
+
+## 2026-06-06
+
+### Phase 3 — Point and Fix
+
+- Phase 3 wrap: spec, design file, and review state
+- Review polish: checkpoint placeholder reads as a calm check, not a broken image
+- Review fixes: the session shows what you reported
+- Review revision: one owner for every fix-session fact
+- Group 8: nothing technical leaks, and every contract is proven
+- Group 7: the fix checkpoint closes the loop
+- Group 6: reported comments get their own shelf on the board
+- Group 5: point mode is on screen — highlight, comment, pin
+- Group 4: a comment can now become a finished fix
+- Group 3: the app can now feel where you point
+- Group 2: the screen and the engine can now talk about comments
+- Group 1: comments get a home in the project's memory
+- Spec Mode 3: living docs updated for Phase 2 wrap; branch merged to main
+
 ## 2026-06-04
 
 ### Phase 2 — Watch It Get Made

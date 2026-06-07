@@ -24,7 +24,9 @@
 │  preview.ts store (Phase 2 — PreviewState per project) │
 │  Components: FrontDoor, Rail, ProjectSwitcher,          │
 │              Board, SessionFeed, Wizard,                │
-│              LivePreview (<webview> + state overlays)   │
+│              LivePreview (<webview> + state overlays),  │
+│              AnnotationLayer (SVG overlay, Ph3),        │
+│              CommentPin + CommentShelf (Ph3)            │
 └───────────────────┬─────────────────────────────────────┘
                     │ contextBridge (Zod-validated IPC)
                     │ ipc-schemas.ts ← single source of truth
@@ -36,8 +38,9 @@
 │  ├── feed-bridge.ts      (feed events, questions)      │
 │  ├── session-bridge.ts   (start, steer, answer)        │
 │  ├── wizard-bridge.ts    (scoping, approve)            │
-│  └── preview-bridge.ts   (preview:get-state,           │
-│                            devserver:start/stop)        │
+│  ├── preview-bridge.ts   (preview:get-state,           │
+│  │                         devserver:start/stop)        │
+│  └── fix-session-bridge.ts (comments:*, Ph3)           │
 │                                                         │
 │  SDK layer                                              │
 │  ├── session-runner.ts   (wraps SDK query(), streams)  │
@@ -111,6 +114,15 @@ question_queue (id TEXT PK, session_id TEXT FK, prompt JSON,
 build_steps (id TEXT PK, project_id TEXT FK, session_id TEXT FK,
              card_id TEXT FK, status TEXT,  -- 'running'|'complete'|'failed'|'snag'
              started_at INTEGER, completed_at INTEGER, dev_url TEXT)
+```
+
+### Comments (Phase 3)
+```
+comments (id TEXT PK, project_id TEXT FK, type TEXT -- 'comment'|'bug'|'tweak',
+          x REAL, y REAL, element_selector TEXT,
+          screenshot_data_url TEXT, text TEXT,
+          status TEXT -- 'open'|'in_progress'|'resolved',
+          session_id TEXT FK, created_at INTEGER, resolved_at INTEGER)
 ```
 
 ### Projects (Phase 2 additions)
