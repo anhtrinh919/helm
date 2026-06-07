@@ -640,9 +640,76 @@ export function createMockBridge(): HelmApi {
       },
     },
     history: {
-      decisions: async () => ({ entries: [] }),
-      progress: async () => ({ entries: [] }),
-      docs: async () => ({ content: null }),
+      decisions: async (projectId) => {
+        const project = projects.find((p) => p.id === projectId)
+        if (!project) return { entries: [] }
+        const ms = project.createdAt
+        return {
+          entries: [
+            {
+              id: uid(), sessionId: uid(), sessionName: 'Step 1 of 5: User auth',
+              cardId: uid(), cardTitle: 'User sign-in & sign-up',
+              question: 'Should users sign in with an email/password or use a magic-link flow?',
+              answer: 'Email and password — I want to keep it simple for now.',
+              answeredAt: ms + 120_000,
+            },
+            {
+              id: uid(), sessionId: uid(), sessionName: 'Step 2 of 5: Feedback form',
+              cardId: uid(), cardTitle: 'Feedback submission form',
+              question: 'How many categories should feedback be tagged with?',
+              answer: 'Three: Bug, Feature request, and General feedback.',
+              answeredAt: ms + 3_600_000,
+            },
+            {
+              id: uid(), sessionId: uid(), sessionName: 'Step 3 of 5: Dashboard',
+              cardId: uid(), cardTitle: 'Admin dashboard',
+              question: 'Should the dashboard have a chart showing submissions over time?',
+              answer: 'Yes — a simple bar chart by week.',
+              answeredAt: ms + 7_200_000,
+            },
+          ],
+        }
+      },
+      progress: async (projectId) => {
+        const project = projects.find((p) => p.id === projectId)
+        if (!project) return { entries: [] }
+        const ms = project.createdAt
+        return {
+          entries: [
+            {
+              id: uid(), sessionId: uid(), sessionName: 'Step 1 of 5: User auth',
+              cardId: uid(), cardTitle: 'User sign-in & sign-up',
+              cardStepLabel: 'Step 1 of 5: User sign-in & sign-up',
+              status: 'complete' as const,
+              startedAt: ms + 60_000,
+              completedAt: ms + 18 * 60_000,
+            },
+            {
+              id: uid(), sessionId: uid(), sessionName: 'Step 2 of 5: Feedback form',
+              cardId: uid(), cardTitle: 'Feedback submission form',
+              cardStepLabel: 'Step 2 of 5: Feedback submission form',
+              status: 'complete' as const,
+              startedAt: ms + 20 * 60_000,
+              completedAt: ms + 44 * 60_000,
+            },
+            {
+              id: uid(), sessionId: uid(), sessionName: 'Step 3 of 5: Dashboard',
+              cardId: uid(), cardTitle: 'Admin dashboard',
+              cardStepLabel: 'Step 3 of 5: Admin dashboard',
+              status: 'complete' as const,
+              startedAt: ms + 50 * 60_000,
+              completedAt: ms + 80 * 60_000,
+            },
+          ],
+        }
+      },
+      docs: async (projectId) => {
+        const project = projects.find((p) => p.id === projectId)
+        if (!project) return { content: null }
+        return {
+          content: `# ${project.name}\n\nA web app built with Helm.\n\n## Getting started\n\nRun \`npm install\` then \`npm run dev\` to start the development server.\n\n## Features\n\n- User sign-in and sign-up with email/password\n- Feedback submission form with category tagging\n- Admin dashboard with weekly submission chart\n- Email notifications for new feedback`,
+        }
+      },
     },
     startProbe: async () => ({ sessionId: uid() }),
     getFeed: async (sessionId) => ({ events: feeds[sessionId] ?? [] }),
