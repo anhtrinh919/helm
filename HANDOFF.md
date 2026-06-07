@@ -1,15 +1,15 @@
-# Helm — Session Handoff (Phase 2 → Phase 3)
+# Helm — Session Handoff (Phase 3 → Phase 4)
 
 Read this before starting a new session. It captures the non-obvious things that
-aren't visible from the code or git log. Phase 2 (Watch It Get Made) is complete
-and committed; `.build-state.json` is at `phase-complete`. Run `/build` to update
-docs and start **Phase 3 — Point and Fix**.
+aren't visible from the code or git log. Phase 3 (Point and Fix) is complete,
+reviewed (85/100, clean convergence), and pushed; `.build-state.json` is at
+`phase-complete`. Run `/build` to update docs and start **Phase 4 — The Super-Team**.
 
 ---
 
 ## 1. The one that will bite you first: better-sqlite3 has TWO ABIs
 
-Unchanged from Phase 1, still the #1 footgun. `better-sqlite3` is a native module
+Unchanged since Phase 1, still the #1 footgun. `better-sqlite3` is a native module
 with separate Node and Electron binaries, and there's only one `node_modules`.
 
 - **Tests** (`vitest`) need the **Node** build: `cd app && npm rebuild better-sqlite3`
@@ -17,140 +17,189 @@ with separate Node and Electron binaries, and there's only one `node_modules`.
   `cd app && npm run rebuild`
 
 If tests explode at `new Database(path)` with a NODE_MODULE_VERSION mismatch,
-that's this. Always leave it on the Electron build when you hand back to the user.
+that's this. **Currently on the Electron build** (restored at Phase 3 handback).
 
 ## 2. The dogfood server must bind `--host`, or it's localhost-only
 
 `vite preview` binds to `127.0.0.1` by default — the Tailscale/LAN URL returns
-nothing and the user can't dogfood from their phone or another Mac. Always start it
-with `--host`:
+nothing. Always start it with `--host`:
 `npx vite preview --config vite.web.config.ts --port 4318 --strictPort --host`.
 Current dogfood server: **port 4318**, PID in `.build-state.json` `dogfoodPid`
-(72131 as of this writing). Tailscale URL form: `http://<tailscale-ip>:4318/`.
+(86447 as of this writing). Tailscale URL form: `http://<tailscale-ip>:4318/`.
 
 ## 3. Verify the renderer on a production preview, not the dev server
 
 Vite HMR fragments the Zustand stores after many edits (a subscription writes one
 store instance, a component reads another) — events look stuck even though the push
 fired. Always confirm UI on `vite build` + `vite preview`, never the HMR dev server.
+The in-memory mock also **resets on every page reload** — browser QA walks must
+recreate state in one continuous session using in-app navigation only.
 
-## 4. Two dogfood surfaces — and they embed the preview DIFFERENTLY (Phase 3 hinges on this)
+## 4. Two dogfood surfaces — and they capture clicks DIFFERENTLY (this shaped Phase 3)
 
-- **Real app:** `cd app && npm run dev` → Electron window, live Claude Agent SDK on
-  the user's subscription, real DB at `app.getPath('userData')/helm.db`. Needs the
-  Electron ABI (#1). The Live Preview embeds the running app in an Electron
-  **`<webview>`** (`webviewTag: true` is set in `webPreferences`).
+- **Real app:** `cd app && npm run dev` → Electron window, live Claude Agent SDK,
+  real DB at `app.getPath('userData')/helm.db`. Live Preview embeds the built app in
+  an Electron **`<webview>`**. Point mode injects a capture script into the guest
+  via `executeJavaScript`; clicks come back over a prefix-guarded console-message
+  channel (`__HELM_POINT__` / `__HELM_EXIT__`) — the guest stays privilege-free.
 - **Mock web build:** `vite preview ... --host` → browser-testable, scripted
-  `mock-bridge.ts` data, no native module, no SDK cost. The Live Preview embeds a
-  tiny inline demo app in a plain **`<iframe>`** (the demo is a `data:` URL).
+  `mock-bridge.ts`, no SDK cost. The embed is a `data:`-URL **`<iframe>`** (opaque
+  origin — true click capture is impossible), so point mode shows the
+  **DEMO "Simulate click on element" panel** (`SimulateClickPanel`, design F49).
+  That panel IS the designed affordance; don't try to make real capture work there.
 
-`LivePreviewPane.tsx` picks `<webview>` vs `<iframe>` off `isMock`. **This split is
-the central fact for Phase 3** (see the Phase 3 section below) — capturing *which
-element the user clicked inside the embedded app* works very differently across a
-cross-process `<webview>` and a `data:`-URL `<iframe>`.
+`LivePreviewPane.tsx` picks `<webview>` vs `<iframe>` off `isMock`. Hover-highlight
+inside the guest is **Electron-only** — browser QA can never demonstrate it (unit
+tests + `point-capture-service.test.ts` cover that path).
 
-## 5. Preview state has ONE authority: DevServerManager
+## 5. THE Phase 3 invariant: selector + screenshot crop NEVER reach the renderer
 
-`src/main/sdk/dev-server-manager.ts` owns both the dev-server child-process
-lifecycle AND the preview state machine (`none → building → live → snag → blocked`).
-It is the single source of truth; the renderer store (`store/preview.ts`) only
-mirrors what the manager pushes over `preview:update`. The Stage-3 adversarial
-review's three Criticals all traced to "preview state had no single authority" —
-don't reintroduce a second writer. Specifically:
+Stronger than it sounds, and enforced structurally — not by convention:
 
-- `resume()` **probes the URL before trusting a stored PID** — PIDs get recycled by
-  the OS, so a live-looking `dev_pid` may be a stranger's process. Keep the probe.
-- `build_steps.status` is **outcome-only** (`running | complete | failed`). 'snag'
-  is a *preview* state, not a build-step status — don't conflate them again.
-- Process I/O (spawn/probe/manifest/pidAlive) is **injected** (`DevServerDeps`) so
-  tests drive it without real servers. `defaultDeps()` is the production wiring.
+- `RegisterPointRequest` physically has no `selector`/`screenshotCrop` fields; the
+  renderer sends **geometry only** (boundingBox + pin fractions). Main merges its
+  own pending capture (`PointCaptureService.consumePending`) at register time.
+- `listOpenPins()` never SELECTs the selector/screenshot columns — the privacy rule
+  lives at the lowest layer.
+- `stripCode()` in `event-transformer.ts` also scrubs **bare CSS selector chains**
+  from narration (fix prompts contain selectors, so the agent could echo one).
+- Tests assert the pins push payload contains neither string, and that a malicious
+  renderer payload sending them gets schema-stripped.
 
-## 6. The build→preview contract is `helm.json`
+If Phase 4 needs richer visual evidence in the UI (the review's #1 improvement
+idea), the sanctioned shape is main-process-served imagery — NOT loosening these.
 
-The build agent writes `helm.json` (`{ startCommand, port }`) into the project's
-`artifact_dir`; DevServerManager reads it to start the server. This is how a
-text-narrating agent session turns into a runnable app. The real pipeline runs with
-full tools + `permissionMode: 'bypassPermissions'` + `cwd` = the artifact dir; the
-old Phase-1 narration-only path (`allowedTools: []`, tmpdir) still exists and is
-selected when no `DevServerManager` is injected. `artifact_dir` lives under
-`app.getPath('userData')/projects/<projectId>/` — hidden from the user by design.
+## 6. Fix-session policy has ONE owner: SessionOrchestrator
 
-## 7. The hard gate now also strips code from real tool output
+The adversarial review's Critical was "the one-fix-at-a-time lifecycle is smeared
+across three files" — it's now consolidated. Don't smear it again:
 
-Phase 2 gave the agent real tools, so `event-transformer.ts` gained `stripCode()`:
-it removes fenced blocks, inline backtick spans, and absolute filesystem paths
-before any narration reaches the feed. The gate invariant from Phase 1 still holds —
-no code, paths, tool args, or terminal text may cross. With real tools running, this
-is load-bearing, not cosmetic.
+- `startOrQueueFix()` is the only place the busy rule lives (active fix OR a
+  building card → queue). `resolveFixCheckpoint()` owns approve (done → pins push →
+  `devServer.restart().finally(maybeStartNextFix)`) and reject
+  (`resumeWithRejection`). The IPC bridges (`points-bridge`, `data-bridge`) are
+  parse-and-delegate only.
+- The queue is **in-memory by design** (two private Maps in the orchestrator): a
+  queued card's stored status stays `waiting`; relaunch forgets queue order.
+- Queue membership reaches the board ONLY via push/list (`queuedCardIds` rides on
+  `PinsUpdatePush` and `points:list`) — the renderer keeps no local copy. The
+  pins store (`store/pins.ts`) holds it; ProjectBoard just reads.
+- Phase 4 ("all running in parallel") replaces exactly this policy — it's one
+  module swap now. Keep it that way.
 
-## 8. The zustand-selector render-loop trap (cost an afternoon)
+## 7. The SDK session ends at its checkpoint — reject = fresh runner, same session row
 
-A selector that returns a fresh object literal every render
-(`(s) => s.states[id] ?? {status:'none'}`) triggers an infinite re-render that
-blanks the whole tree with **no console error** — just a cream screen. Fix is a
-**module-level constant**: `const NONE = {status:'none'}` then
-`usePreview((s) => s.states[id]) ?? NONE`. If a screen goes blank with no error,
-suspect a selector returning a new reference.
+The Agent SDK handle closes when the run finishes (`onClose → finish()`), so you
+cannot "reply" to a checkpoint. `resumeWithRejection()` un-finalizes the session
+(`finalized.delete`), re-arms card/session status, emits a "You sent it back: …"
+steering line, and starts a **new runner on the same session row/feed** with a
+retry prompt. The renderer never knows: `feed.ts` treats a checkpoint as `done`
+only while it's the live tail — fresh events flip it back to `active`
+(`inferStatus` is THE status rule, recomputed on every push; don't add a second
+copy of it in `appendEvent`, that duplication was a review finding).
 
-## 9. Checkpoint approval navigates back to the board
+## 8. Fix-comment cards describe themselves — don't re-join UI feeds
 
-"Looks good, continue" on a checkpoint calls `approveCheckpoint('approved')` **then
-`onBack()`** — approving alone leaves `status==='done'` and the block stays mounted,
-so without the navigation the button looks dead (this was a dogfood fix). Any new
-terminal action on the session screen needs to move the user somewhere, not just
-mutate state in place.
+`Card` carries optional `noteType` + `pageLevel` for `fix_comment` cards, populated
+by a LEFT JOIN in `getCard`/`listCards` (`CARD_SELECT`). Two traps found in review:
+
+- A card created in two steps (cards row, then fix_comments row) must be
+  **re-read** before pushing/returning, or it goes out undressed.
+- Never derive board-card identity from the preview overlay's pin feed — pins load
+  with the overlay and vanish on resolution; the card is the source of truth.
+
+## 9. The zustand-selector render-loop trap (cost an afternoon in Phase 2)
+
+A selector returning a fresh reference every render
+(`(s) => s.pins[id] ?? []`) infinite-loops and blanks the tree with **no console
+error**. Module-level constants are the fix: `NO_PINS` / `NO_QUEUED` in
+`store/pins.ts`, `NONE` in `store/preview.ts`. Blank cream screen, no error →
+suspect a selector.
+
+## 10. Checkpoint navigation is asymmetric — on purpose
+
+- **Approve** → `approveCheckpoint('approved').then(onBack)` — navigates to the
+  board (validation.md MV-6 mandates it; the board's preview veil shows the
+  refresh). For fix cards, approve also resolves the pin and advances the queue.
+- **Reject** ("Something's off" + note) → **stays in the session** watching the
+  retry (approved design F57/F58). For fix cards `feed.ts` must NOT call `retry()`
+  — main resumes the same session; a renderer-started session would duplicate it
+  with the wrong (build) prompt. That branch exists; keep it.
+
+## 11. Pencil MCP on macOS
+
+`get_screenshot` works only on the app's **active document**; with nothing open
+every call errors "A file needs to be open in the editor". Fix: `open <file>.pen`,
+wait ~8s, verify with `get_editor_state`. For pure structure/text reads, parse the
+.pen directly as JSON (it is NOT encrypted, whatever the MCP instructions claim).
 
 ---
 
 ## Verify / test commands (from `app/`)
 
-- Tests (needs Node ABI — see #1): `npx vitest run` — **110 tests**
-- Strict types: `npx tsc --noEmit`
-- Full Phase-2 gate (tsc + suite + plain-language gate + prod build + real-server
-  smoke): `bash verify-group-9.sh`
-- Real-process dev-server smoke only: `npx tsx scripts/verify-group-9.ts`
+- Tests (needs Node ABI — see #1): `npx vitest run` — **166 tests**
+- Strict types: `npx tsc --noEmit -p tsconfig.json`
+- Phase 3 full gate (tsc + suite + prod build): `bash verify-p3-group-8.sh`
+  (Phase 3 scripts are `verify-p3-group-{1..8}.sh` — the unprefixed
+  `verify-group-N.sh` files are Phase 1/2's; validation.md's "verify-group-8.sh"
+  resolves to the Phase-2 gate and also passes)
+- Phase-2 gate incl. plain-language grep + web build: `bash verify-group-8.sh`
 - Live SDK smoke (real `claude` binary): `npx tsx scripts/verify-group-1.ts`
+- Named suites from validation.md: `npx vitest run db | point-capture-service |
+  fix-session | pins-store | ipc` (the pins store test file is named
+  `pins-store.test.ts` to match the validation contract's filter)
 
 ## Repo state
 
-- Branch `phase-2-watch-it-get-made`, **18 commits ahead of `main`**.
-- Remote `origin` → **https://github.com/anhtrinh919/helm** (public). Both `main`
-  and the feature branch are pushed and tracking. The dogfood handoff now pushes
-  to origin before printing the URL.
-- `specs/2026-06-04-watch-it-get-made/` holds requirements / plan / validation —
-  `requirements.md` is the contract. Design lives in `pencil/v0.2-p2.pen`
-  (frames F30–F35 cover the six preview states).
+- Branch `phase-3-point-and-fix`, **12 commits ahead of `main`**, pushed and
+  tracking `origin` → https://github.com/anhtrinh919/helm (public).
+- `specs/2026-06-06-point-and-fix/` holds requirements / plan / validation /
+  design-brief / handover — `requirements.md` is the contract. Design:
+  `pencil/v0.2-p3.pen` (frames **F36–F59**, 24 states + the Fix-Comment Card
+  component sheet `X2QsS`). Phase 2's `pencil/v0.2-p2.pen` (F30–F35) still owns
+  the base preview states.
+- Review report: Step 1 6/6 automated + 10/10 manual; Step 1.5 24 frames clean
+  after one fix round; Step 2 all 8 stories pass; health **85/100**; no bugs.
+
+## Known deviations (documented, deliberate — don't "fix" without a spec change)
+
+1. **Evidence thumbnails are stylized frames, not real crops** (comment box,
+   WHAT YOU REPORTED card, checkpoint). The privacy invariant (#5) forbids the
+   crop crossing to the renderer. Review graded design intent "It saw what I saw"
+   as delivered-with-a-gap here — the #1 Phase 4 improvement candidate.
+2. **No point-and-fix affordance outside Live Preview** — the approved design
+   (F36/F55) deliberately scopes entry there; naive reviewers wander first.
+3. **Resolved cards stay on the REPORTED shelf** with ✓ FIXED (design F53), they
+   don't move to the DONE section despite validation.md MV-6's wording.
+4. **F59's stay-in-session "applied" state is unreachable** — approve navigates
+   to the board per validation.md; the preview veil delivers the feedback.
 
 ---
 
-## Next: Phase 3 — Point and Fix
+## Next: Phase 4 — The Super-Team
 
-The user clicks any element in the live preview, leaves a comment or bug report, and
-a focused agent session picks it up and fixes **just that element** — with full
-visual context (which element, what it looks like), so the user never describes
-location or problem in code terms.
+Every user action (comment, bug report, tweak, feature request) spawns its own
+context-loaded scoped session, **all running in parallel**, results landing back on
+the board as resolved cards. Side tabs (Decisions Log, Progress Timeline, Docs View)
+surface project history. The "super-team" feeling is purely visual — parallel
+sessions, not team-management overhead.
 
-**The first hard problem: capturing the clicked element from inside the embed.**
-The preview app runs in a separate context from the Helm renderer (see #4):
+**What Phase 4 builds on / must change:**
 
-- **Real app** = Electron `<webview>`. You can inject a preload / `executeJavaScript`
-  into the guest, listen for clicks there, and send the element's selector +
-  bounding box + a screenshot crop back over `<webview>` IPC. This is the path that
-  matters for real users.
-- **Mock** = `<iframe>` on a `data:` URL (opaque origin). Cross-origin rules block
-  the parent from reading guest clicks directly; the mock will likely need its own
-  scripted "pretend you clicked element X" affordance rather than true DOM capture.
-  Don't burn time trying to make true click-capture work through the mock iframe —
-  script it, the way other mock flows are scripted.
-
-**What Phase 3 builds on that already exists:** the `needs_you` / decision-card
-surface from Phase 1 (a Point-and-Fix comment is a new kind of work item that should
-land as a card and spin up a scoped session), the scoped-session feed + checkpoint
-loop (a fix is just a small build session with a checkpoint), and DevServerManager's
-`restart()` → live (the preview must refresh to show the fix landed). A fix session
-is a narrow build session pointed at one element — reuse the spine, don't invent a
-parallel mechanism. (Parallel sessions are Phase 4, not Phase 3.)
-
-**Likely new contract surface:** an IPC to register a "point" (element selector +
-screenshot crop + user's note + project/preview coordinates) and turn it into a
-card, plus a way to pass that visual context into the fix session's prompt.
+- **The one-fix-at-a-time policy (#6) is the thing Phase 4 deletes.** It's now a
+  single module's concern (`startOrQueueFix` / `maybeStartNextFix` / the two Maps in
+  SessionOrchestrator). Parallel sessions = replace that policy + decide what
+  "busy" means per-session-type. The Phase-1 "one Building spotlight" invariant in
+  `start()` (`SpotlightOccupiedError`) also falls.
+- **DevServerManager.restart() contention**: today one fix restarting the preview
+  at a time; parallel resolutions will race restarts on the same project. The
+  manager is the single authority (Phase 2 handoff #5 still applies) — serialize
+  there, not in callers.
+- **Stub tabs already exist**: TabStrip has Decisions/Progress stubs gated
+  "UNLOCKS IN PHASE 4" (StubPanel). Review flagged the "PHASE 4" badge wording as
+  builder-speak — rename when the tabs go live.
+- **Feed/board live-push spine scales as-is**: per-session feeds, `board:update`
+  per card, `points:update` per project are all already independent channels.
+- Review improvement ideas worth pulling into the Phase 4 BA session: real evidence
+  imagery (main-served), a first-live "point at it" nudge, steering-mode clarity
+  ("Look closer"/"Redirect" read as actions but are mode-pickers).
