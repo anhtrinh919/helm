@@ -7,13 +7,20 @@ import { deriveBackgroundStatus } from '../db/projects'
 import { completeBuildStep, createBuildStep, failBuildStep } from '../db/build-steps'
 import type { DevServerManager } from './dev-server-manager'
 import {
-  findBuildingCard,
   getCard,
   setCardSession,
   setPendingCheckpoint,
   updateCardStatus,
 } from '../db/cards'
-import { ArtifactDirError, NotAwaitingDecisionError, SpotlightOccupiedError } from '../db/errors'
+import { getFixComment, listOpenPins } from '../db/fix-comments'
+import type { FixComment } from '../../shared/ipc-schemas'
+import {
+  ArtifactDirError,
+  NotAwaitingDecisionError,
+  NotFoundError,
+  NotWaitingError,
+  NoVisualContextError,
+} from '../db/errors'
 import {
   createSession,
   getSession,
@@ -48,6 +55,7 @@ export class SessionOrchestrator {
   private interrupted = new Set<string>()
   /** Real-pipeline sessions → their build_step id (for completion / failure marking). */
   private buildStepBySession = new Map<string, string>()
+  // Phase 4: all fix sessions run in parallel — no queue, no busy lock.
 
   constructor(
     private db: Db,
@@ -74,6 +82,20 @@ export class SessionOrchestrator {
 
   private pushBoard(card: Card): void {
     this.send(CH.boardUpdate, { projectId: card.projectId, cardId: card.id, card })
+  }
+
+  /** Phase 4: no queue — always empty. */
+  queuedFixCardIds(_projectId: string): string[] {
+    return []
+  }
+
+  /** Push the full pin list — Phase 4 has no queue so queuedCardIds is always []. */
+  private pushPins(projectId: string): void {
+    this.send(CH.pointsUpdate, {
+      projectId,
+      pins: listOpenPins(this.db, projectId),
+      queuedCardIds: [],
+    })
   }
 
   private pushBackground(projectId: string): void {
@@ -117,15 +139,163 @@ export class SessionOrchestrator {
     ].join(' ')
   }
 
-  /** Open a scoped session for a card and start the live build. */
-  start(projectId: string, cardId: string): Session {
+  /** The plain-language instruction for a focused fix session (Phase 3).
+   *  Carries the user's note + the captured visual context — and scopes the
+   *  agent to exactly the thing that was pointed at. */
+  private buildFixPrompt(fix: FixComment, retryNote?: string): string {
+    const typeLabel = fix.noteType === 'bug' ? 'something is broken' : 'they want this changed'
+    const where = fix.selector
+      ? [
+          `They clicked a specific element in the running app. Internally it matches the CSS selector "${fix.selector}"`,
+          fix.boundingBox
+            ? `(on screen it sat at about x=${Math.round(fix.boundingBox.x)}, y=${Math.round(fix.boundingBox.y)}, ${Math.round(fix.boundingBox.width)}×${Math.round(fix.boundingBox.height)} px in their viewport).`
+            : '.',
+          `A screenshot crop of the element was captured at the time, so trust the selector for locating it.`,
+        ].join(' ')
+      : `They commented on the whole screen they were looking at, not one element.`
+    const shared = [
+      `Narrate your progress in short, friendly, plain-English lines — one sentence per step,`,
+      `as if updating a teammate who can't read code. NEVER show code, file paths, commands, URLs,`,
+      `or CSS selectors in your narration.`,
+      `Make routine technical choices silently. When you hit a GENUINE fork that changes what the`,
+      `product does or how it feels, STOP and ask — emit exactly one JSON object on its own line:`,
+      `{"decision":{"question":"<plain-English question>","options":["<choice>","<choice>"]}}.`,
+      `Nothing else on that line.`,
+    ]
+    return [
+      `You are fixing ONE specific thing in an existing, working web app for a non-technical person.`,
+      `The app's code is in the current working directory. Keep the dev command and port declared in helm.json working.`,
+      `Their feedback (${typeLabel}): "${fix.note}".`,
+      where,
+      retryNote
+        ? `You already made a fix attempt. They reviewed it and said: "${retryNote}". Adjust your fix accordingly.`
+        : '',
+      `Fix ONLY this — do not redesign, rename, or touch unrelated parts of the app.`,
+      ...shared,
+      `Say plainly when the fix is ready.`,
+    ]
+      .filter(Boolean)
+      .join(' ')
+  }
+
+  /** Run the SDK for a fix session (first attempt and retries share this wiring). */
+  private runFix(sessionId: string, projectId: string, cardId: string, prompt: string, cwd: string): void {
+    const handle = this.runner(
+      { prompt, cwd, permissionMode: 'bypassPermissions', allowedTools: undefined },
+      {
+        onMessage: (msg) => {
+          const raw = JSON.stringify(msg)
+          for (const ev of transform(sessionId, msg)) {
+            this.ingest(sessionId, projectId, cardId, ev, raw)
+          }
+        },
+        onError: (message) => this.fail(sessionId, projectId, cardId, message),
+        onClose: () => this.finish(sessionId, projectId, cardId),
+      },
+    )
+    this.handles.set(sessionId, handle)
+  }
+
+  /**
+   * Start the focused fix session for a fix-comment card (Phase 3). Same spine
+   * as a build session — real cwd, full tools, hard narration gate — but the
+   * prompt is generated from the comment's visual context, and no build step /
+   * preview veil is involved (the preview refreshes on checkpoint APPROVAL).
+   */
+  startFix(projectId: string, cardId: string): Session {
     const card = getCard(this.db, cardId)
-    // Phase 1 hard invariant: one Building spotlight per project at a time.
-    const occupied = findBuildingCard(this.db, projectId)
-    if (occupied && occupied.id !== cardId) {
-      throw new SpotlightOccupiedError(occupied.sessionId ?? '')
+    if (card.type !== 'fix_comment') throw new NotFoundError('not a fix-comment card')
+    if (card.status !== 'waiting') throw new NotWaitingError('fix is not waiting to start')
+    let fix: FixComment
+    try {
+      fix = getFixComment(this.db, cardId)
+    } catch (e) {
+      if (e instanceof NotFoundError) throw new NoVisualContextError('fix comment record missing')
+      throw e
+    }
+    if (!this.devServer) throw new ArtifactDirError('fix sessions need the real pipeline')
+    let cwd: string
+    try {
+      cwd = this.devServer.ensureArtifactDir(projectId)
+    } catch (e) {
+      throw new ArtifactDirError(e instanceof Error ? e.message : 'could not resolve working directory')
     }
 
+    const session = createSession(this.db, projectId, cardId, fixSessionName(fix.note))
+    setCardSession(this.db, cardId, session.id)
+    this.pushBoard(updateCardStatus(this.db, cardId, 'building'))
+    this.pushBackground(projectId)
+
+    this.runFix(session.id, projectId, cardId, this.buildFixPrompt(fix), cwd)
+    return session
+  }
+
+  /** Phase 4: start the fix immediately — all fixes run in parallel. */
+  startOrQueueFix(
+    projectId: string,
+    cardId: string,
+  ): { session: Session; queued: false } | { session: null; queued: true } {
+    const card = getCard(this.db, cardId)
+    if (card.status !== 'waiting') throw new NotWaitingError('fix is not waiting to start')
+    return { session: this.startFix(projectId, cardId), queued: false }
+  }
+
+  /**
+   * The user judged a fix checkpoint (the verdict is already recorded on the
+   * card). Approve lands it: pin resolved, preview refreshed, queue advanced.
+   * Reject sends the note back into the SAME session for another pass.
+   */
+  resolveFixCheckpoint(cardId: string, verdict: 'approved' | 'flagged', flagNote?: string): Card {
+    let card = getCard(this.db, cardId)
+    if (verdict === 'approved') {
+      if (card.status === 'building') card = updateCardStatus(this.db, cardId, 'done')
+      this.pushBoard(card)
+      this.pushPins(card.projectId)
+      if (this.devServer) {
+        void this.devServer.restart(card.projectId).catch(() => {})
+      }
+    } else {
+      if (card.sessionId) this.resumeWithRejection(card.sessionId, flagNote ?? '')
+      card = getCard(this.db, cardId)
+      this.pushBoard(card)
+    }
+    return card
+  }
+
+  /**
+   * The user rejected a fix checkpoint with a reason. The session row and feed
+   * continue; under the hood a fresh engine run picks up with the rejection note
+   * plus the original visual context (the prior run ended at its checkpoint).
+   */
+  resumeWithRejection(sessionId: string, flagNote: string): void {
+    const session = getSession(this.db, sessionId)
+    const cardId = session.cardId
+    if (!cardId) throw new NotFoundError('session has no card')
+    const fix = getFixComment(this.db, cardId)
+    if (!this.devServer) throw new ArtifactDirError('fix sessions need the real pipeline')
+    const cwd = this.devServer.ensureArtifactDir(session.projectId)
+
+    // Re-arm the lifecycle: the session goes back to active, the card back to
+    // building, and finish()/fail() may run again for the retry.
+    this.finalized.delete(sessionId)
+    updateSessionStatus(this.db, sessionId, 'active')
+    try {
+      this.pushBoard(updateCardStatus(this.db, cardId, 'building'))
+    } catch {
+      /* already building (checkpoint pending) — fine */
+    }
+    this.pushBackground(session.projectId)
+    this.emit(makeFeedEvent(sessionId, 'steering', `You sent it back: ${flagNote}`))
+
+    this.runFix(sessionId, session.projectId, cardId, this.buildFixPrompt(fix, flagNote), cwd)
+  }
+
+  /** Phase 4: no queue to advance. Kept for call-site compatibility. */
+  maybeStartNextFix(_projectId: string): void {}
+
+  /** Open a scoped session for a card and start the live build. Phase 4: multiple builds run in parallel. */
+  start(projectId: string, cardId: string): Session {
+    const card = getCard(this.db, cardId)
     const session = createSession(this.db, projectId, cardId, card.stepLabel ?? card.title)
     setCardSession(this.db, cardId, session.id)
 
@@ -319,9 +489,11 @@ export class SessionOrchestrator {
   private emitCheckpoint(sessionId: string, projectId: string, cardId: string): void {
     const card = setPendingCheckpoint(this.db, cardId)
     this.pushBoard(card)
-    this.emit(
-      makeFeedEvent(sessionId, 'checkpoint', 'Here’s what I built — does this look right?', cardId),
-    )
+    const text =
+      card.type === 'fix_comment'
+        ? 'Here’s the fix — does this look right?'
+        : 'Here’s what I built — does this look right?'
+    this.emit(makeFeedEvent(sessionId, 'checkpoint', text, cardId))
     this.pushBackground(projectId)
   }
 
@@ -349,6 +521,13 @@ export class SessionOrchestrator {
       /* best effort */
     }
     this.pushBackground(projectId)
+
+    // A failed fix frees the one-fix-at-a-time slot for the next queued card.
+    try {
+      if (getCard(this.db, cardId).type === 'fix_comment') this.maybeStartNextFix(projectId)
+    } catch {
+      /* card gone — nothing to advance */
+    }
   }
 
   /** A user-initiated stop. Ends the session calmly — no error, no checkpoint —
@@ -368,6 +547,12 @@ export class SessionOrchestrator {
     }
     this.pushBackground(projectId)
   }
+}
+
+/** A fix session is named after the user's note (truncated for the rail). */
+function fixSessionName(note: string): string {
+  const flat = note.replace(/\s+/g, ' ').trim()
+  return flat.length > 60 ? `${flat.slice(0, 57)}…` : flat
 }
 
 function steeringLabel(mode: SteerMode, text: string): string {

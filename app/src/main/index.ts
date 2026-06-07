@@ -8,9 +8,13 @@ import { registerDataBridge } from './ipc/data-bridge'
 import { registerSessionBridge } from './ipc/session-bridge'
 import { registerWizardBridge } from './ipc/wizard-bridge'
 import { registerPreviewBridge } from './ipc/preview-bridge'
+import { registerPointsBridge } from './ipc/points-bridge'
+import { registerHistoryBridge } from './ipc/history-bridge'
 import { SessionOrchestrator } from './sdk/session-orchestrator'
 import { DevServerManager } from './sdk/dev-server-manager'
 import { WizardOrchestrator } from './sdk/wizard-orchestrator'
+import { PointCaptureService } from './sdk/point-capture-service'
+import { defaultPointCaptureDeps } from './sdk/point-capture-electron'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -62,11 +66,27 @@ void app.whenReady().then(() => {
 
   const orchestrator = new SessionOrchestrator(db, getWindow, undefined, devServer)
   const wizard = new WizardOrchestrator(db)
+
+  // Point mode (Phase 3): clicks inside the embedded app come back as captures.
+  // The renderer is pushed geometry only — selector + screenshot stay in main.
+  const pointCapture = new PointCaptureService(
+    defaultPointCaptureDeps(devServer),
+    (projectId, g) => send(CH.pointCaptured, { kind: 'captured', projectId, ...g }),
+    (projectId) => send(CH.pointCaptured, { kind: 'exit', projectId }),
+  )
+
   registerFeedBridge(db, getWindow)
-  registerDataBridge(db, getWindow)
+  registerDataBridge(db, getWindow, { orchestrator })
   registerSessionBridge(db, orchestrator)
   registerWizardBridge(db, wizard, getWindow)
   registerPreviewBridge(db, devServer)
+  registerHistoryBridge(db)
+  registerPointsBridge(db, {
+    capture: pointCapture,
+    devServer,
+    orchestrator,
+    getWindow,
+  })
 
   createWindow()
   // Reconnect or restart each project's dev server so the Live Preview survives

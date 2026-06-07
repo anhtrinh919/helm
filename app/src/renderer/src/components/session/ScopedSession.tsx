@@ -9,6 +9,8 @@ import { FeedEventRow } from './FeedEventRow'
 import { SteeringInput } from './SteeringInput'
 import { QuestionQueue } from './QuestionQueue'
 import { CheckpointBlock } from './CheckpointBlock'
+import { WhatYouReported } from './WhatYouReported'
+import { useBoard } from '../../store/board'
 
 const PULSE: Record<FeedStatus, { label: string; dot: string }> = {
   idle: { label: 'STARTING', dot: 'bg-soft' },
@@ -30,6 +32,7 @@ export function ScopedSession({
   onBack: () => void
 }): React.JSX.Element {
   const { card, session, status, events, questions } = useFeed()
+  const projectName = useBoard((s) => s.projectName)
   const open = useFeed((s) => s.open)
   const appendEvent = useFeed((s) => s.appendEvent)
   const upsertQuestion = useFeed((s) => s.upsertQuestion)
@@ -200,6 +203,9 @@ export function ScopedSession({
 
             {/* Side panel */}
             <div className="flex w-[360px] shrink-0 flex-col gap-4 overflow-y-auto">
+              {card?.type === 'fix_comment' && (
+                <WhatYouReported card={card} projectName={projectName || 'your app'} />
+              )}
               <QuestionQueue
                 questions={questions}
                 onAnswer={(qid, a) => void answer(qid, a)}

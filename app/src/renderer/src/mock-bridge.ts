@@ -6,6 +6,9 @@ import type {
   Card,
   FeedEvent,
   FeedEventPush,
+  FixCommentPin,
+  PinsUpdatePush,
+  PointCapturePush,
   PreviewState,
   PreviewUpdatePush,
   Project,
@@ -121,6 +124,8 @@ export function createMockBridge(): HelmApi {
   const bgListeners = new Set<(p: BackgroundStatusPush) => void>()
   const questionListeners = new Set<(p: QuestionUpdatePush) => void>()
   const previewListeners = new Set<(p: PreviewUpdatePush) => void>()
+  const pinsListeners = new Set<(p: PinsUpdatePush) => void>()
+  const pointCaptureListeners = new Set<(p: PointCapturePush) => void>()
 
   // Live Preview simulation. In a plain browser there is no real dev server, so
   // the "live" state points the embed at a tiny inline demo app so the preview
@@ -221,6 +226,57 @@ export function createMockBridge(): HelmApi {
     }, 4200)
   }
 
+  /* ----------------------- point-and-fix simulation (Phase 3) ----------------------- */
+
+  const pinsByProject: Record<string, FixCommentPin[]> = {}
+  const activeFix = new Map<string, string>() // projectId → running fix sessionId
+  const fixQueue = new Map<string, string[]>() // projectId → queued cardIds
+
+  const pushPins = (projectId: string): void => {
+    const pins = pinsByProject[projectId] ?? []
+    const queuedCardIds = [...(fixQueue.get(projectId) ?? [])]
+    pinsListeners.forEach((cb) => cb({ projectId, pins, queuedCardIds }))
+  }
+
+  const runScriptedFix = (sessionId: string, c: Card): void => {
+    const lines: [number, FeedEvent['kind'], string][] = [
+      [500, 'narration', 'Taking a look at the spot you pointed at.'],
+      [1300, 'narration', 'Found it — making the change now.'],
+      [2100, 'activity', 'Working on it'],
+      [2900, 'narration', 'Done — double-checking nothing else moved.'],
+    ]
+    lines.forEach(([t, k, txt]) => setTimeout(() => emitFeed(sessionId, k, txt), t))
+    setTimeout(() => {
+      c.checkpoint = { status: 'pending' }
+      pushBoard(c)
+      emitFeed(sessionId, 'checkpoint', 'Here’s the fix — does this look right?', c.id)
+    }, 3600)
+  }
+
+  const startFixNow = (projectId: string, c: Card): Session => {
+    const sessionId = uid()
+    const session: Session = {
+      id: sessionId,
+      projectId,
+      cardId: c.id,
+      name: c.title,
+      status: 'active',
+      startedAt: Date.now(),
+      endedAt: null,
+      resumedAt: null,
+    }
+    c.sessionId = sessionId
+    c.status = 'building'
+    c.checkpoint = null
+    sessionCard[sessionId] = c
+    feeds[sessionId] = []
+    questionsBySession[sessionId] = []
+    activeFix.set(projectId, sessionId)
+    pushBoard(c)
+    runScriptedFix(sessionId, c)
+    return session
+  }
+
   /* ----------------------- wizard (scripted scoping) ----------------------- */
 
   const wizardSessions: Record<string, { asked: number; idea: string }> = {}
@@ -313,6 +369,46 @@ export function createMockBridge(): HelmApi {
         const c = findCard(cardId)
         if (!c) return { error: 'not_found' }
         c.checkpoint = { status: verdict, ...(flagNote ? { flagNote } : {}) }
+
+        // Fix-comment cards (Phase 3): approve resolves the pin + refreshes the
+        // preview; reject sends the note back into the same scripted session.
+        if (c.type === 'fix_comment') {
+          if (verdict === 'approved') {
+            c.status = 'done'
+            pushBoard(c)
+            pinsByProject[c.projectId] = (pinsByProject[c.projectId] ?? []).filter(
+              (p) => p.cardId !== c.id,
+            )
+            pushPins(c.projectId)
+            activeFix.delete(c.projectId)
+            // The fix lands: brief rebuild veil, then the refreshed app.
+            pushPreview(c.projectId, { status: 'building' })
+            setTimeout(() => pushPreview(c.projectId, { status: 'live', url: DEMO_APP_URL }), 900)
+            // Auto-start the next queued fix — board updates only, no navigation.
+            const nextId = (fixQueue.get(c.projectId) ?? []).shift()
+            if (nextId) {
+              pushPins(c.projectId) // queue shrank — QUEUED badge drops
+              const next = findCard(nextId)
+              if (next) startFixNow(c.projectId, next)
+            }
+          } else {
+            c.status = 'building'
+            c.checkpoint = null
+            pushBoard(c)
+            const sid = c.sessionId
+            if (sid) {
+              emitFeed(sid, 'steering', `You sent it back: ${flagNote ?? ''}`)
+              setTimeout(() => emitFeed(sid, 'narration', 'Got it — adjusting based on your note.'), 700)
+              setTimeout(() => {
+                c.checkpoint = { status: 'pending' }
+                pushBoard(c)
+                emitFeed(sid, 'checkpoint', 'Here’s the new version — better?', c.id)
+              }, 2000)
+            }
+          }
+          return { card: c }
+        }
+
         if (verdict === 'approved') {
           c.status = 'done'
           pushBoard(c)
@@ -453,6 +549,66 @@ export function createMockBridge(): HelmApi {
         return { stopped: true as const }
       },
     },
+    points: {
+      register: async (req) => {
+        const project = projects.find((p) => p.id === req.projectId)
+        if (!project) return { error: 'not_found' }
+        const state = previewStates[req.projectId]
+        if (state?.status !== 'live') return { error: 'preview_not_live' }
+        const list = cards[req.projectId] ?? (cards[req.projectId] = [])
+        const c: Card = {
+          id: uid(),
+          projectId: req.projectId,
+          type: 'fix_comment',
+          title: req.note,
+          status: 'waiting',
+          source: 'user_added',
+          position: list.length,
+          stepLabel: null,
+          dependsOn: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          sessionId: null,
+          decisionPrompt: null,
+          checkpoint: null,
+          noteType: req.noteType,
+          pageLevel: req.pinX == null,
+        }
+        list.push(c)
+        pushBoard(c)
+        ;(pinsByProject[req.projectId] ??= []).push({
+          cardId: c.id,
+          pinX: req.pinX ?? null,
+          pinY: req.pinY ?? null,
+          noteType: req.noteType,
+        })
+        pushPins(req.projectId)
+        return { card: c }
+      },
+      list: async (projectId) => ({
+        pins: pinsByProject[projectId] ?? [],
+        queuedCardIds: [...(fixQueue.get(projectId) ?? [])],
+      }),
+      activate: async () => ({ ok: true as const }),
+      deactivate: async () => ({ ok: true as const }),
+    },
+    fixSessions: {
+      start: async (projectId, cardId) => {
+        const c = findCard(cardId)
+        if (!c || c.type !== 'fix_comment') return { error: 'not_found' }
+        if (c.status !== 'waiting') return { error: 'not_waiting' }
+        if (activeFix.has(projectId)) {
+          const q = fixQueue.get(projectId) ?? []
+          if (!q.includes(cardId)) {
+            q.push(cardId)
+            fixQueue.set(projectId, q)
+            pushPins(projectId) // queue membership changed — board shows QUEUED
+          }
+          return { queued: true as const, session: null }
+        }
+        return { queued: false as const, session: startFixNow(projectId, c) }
+      },
+    },
     events: {
       onBoardUpdate: (cb) => {
         boardListeners.add(cb)
@@ -473,6 +629,86 @@ export function createMockBridge(): HelmApi {
       onPreviewUpdate: (cb) => {
         previewListeners.add(cb)
         return () => previewListeners.delete(cb)
+      },
+      onPinsUpdate: (cb) => {
+        pinsListeners.add(cb)
+        return () => pinsListeners.delete(cb)
+      },
+      onPointCapture: (cb) => {
+        pointCaptureListeners.add(cb)
+        return () => pointCaptureListeners.delete(cb)
+      },
+    },
+    history: {
+      decisions: async (projectId) => {
+        const project = projects.find((p) => p.id === projectId)
+        if (!project) return { entries: [] }
+        const ms = project.createdAt
+        return {
+          entries: [
+            {
+              id: uid(), sessionId: uid(), sessionName: 'Step 1 of 5: User auth',
+              cardId: uid(), cardTitle: 'User sign-in & sign-up',
+              question: 'Should users sign in with an email/password or use a magic-link flow?',
+              answer: 'Email and password — I want to keep it simple for now.',
+              answeredAt: ms + 120_000,
+            },
+            {
+              id: uid(), sessionId: uid(), sessionName: 'Step 2 of 5: Feedback form',
+              cardId: uid(), cardTitle: 'Feedback submission form',
+              question: 'How many categories should feedback be tagged with?',
+              answer: 'Three: Bug, Feature request, and General feedback.',
+              answeredAt: ms + 3_600_000,
+            },
+            {
+              id: uid(), sessionId: uid(), sessionName: 'Step 3 of 5: Dashboard',
+              cardId: uid(), cardTitle: 'Admin dashboard',
+              question: 'Should the dashboard have a chart showing submissions over time?',
+              answer: 'Yes — a simple bar chart by week.',
+              answeredAt: ms + 7_200_000,
+            },
+          ],
+        }
+      },
+      progress: async (projectId) => {
+        const project = projects.find((p) => p.id === projectId)
+        if (!project) return { entries: [] }
+        const ms = project.createdAt
+        return {
+          entries: [
+            {
+              id: uid(), sessionId: uid(), sessionName: 'Step 1 of 5: User auth',
+              cardId: uid(), cardTitle: 'User sign-in & sign-up',
+              cardStepLabel: 'Step 1 of 5: User sign-in & sign-up',
+              status: 'complete' as const,
+              startedAt: ms + 60_000,
+              completedAt: ms + 18 * 60_000,
+            },
+            {
+              id: uid(), sessionId: uid(), sessionName: 'Step 2 of 5: Feedback form',
+              cardId: uid(), cardTitle: 'Feedback submission form',
+              cardStepLabel: 'Step 2 of 5: Feedback submission form',
+              status: 'complete' as const,
+              startedAt: ms + 20 * 60_000,
+              completedAt: ms + 44 * 60_000,
+            },
+            {
+              id: uid(), sessionId: uid(), sessionName: 'Step 3 of 5: Dashboard',
+              cardId: uid(), cardTitle: 'Admin dashboard',
+              cardStepLabel: 'Step 3 of 5: Admin dashboard',
+              status: 'complete' as const,
+              startedAt: ms + 50 * 60_000,
+              completedAt: ms + 80 * 60_000,
+            },
+          ],
+        }
+      },
+      docs: async (projectId) => {
+        const project = projects.find((p) => p.id === projectId)
+        if (!project) return { content: null }
+        return {
+          content: `# ${project.name}\n\nA web app built with Helm.\n\n## Getting started\n\nRun \`npm install\` then \`npm run dev\` to start the development server.\n\n## Features\n\n- User sign-in and sign-up with email/password\n- Feedback submission form with category tagging\n- Admin dashboard with weekly submission chart\n- Email notifications for new feedback`,
+        }
       },
     },
     startProbe: async () => ({ sessionId: uid() }),

@@ -17,6 +17,7 @@ function StatusPill({ status }: { status: CardStatus }): React.JSX.Element {
     needs_you: ['NEEDS YOU', 'bg-pink'],
     failed: ['OFF-TRACK', 'bg-orange'],
     done: ['DONE', 'bg-mint'],
+    waiting: ['REPORTED', 'bg-cream'],
   }
   const [label, bg] = map[status]
   return (

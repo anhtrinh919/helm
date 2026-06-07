@@ -4,7 +4,9 @@ import type { Db } from './connection'
 import { InvalidTransitionError, NoCheckpointError, NotFoundError } from './errors'
 import { toCard, type CardRow } from './mappers'
 
-/** Allowed card status transitions (build-spine state machine). */
+/** Allowed card status transitions (build-spine state machine).
+ *  'waiting' (Phase 3) belongs to fix_comment cards only: filed → start fix →
+ *  building. Queueing keeps the stored status at 'waiting' (queue is in-memory). */
 const TRANSITIONS: Record<CardStatus, CardStatus[]> = {
   planned: ['up_next', 'building'],
   up_next: ['building', 'planned'],
@@ -12,17 +14,23 @@ const TRANSITIONS: Record<CardStatus, CardStatus[]> = {
   needs_you: ['building', 'failed'],
   failed: ['building', 'up_next'],
   done: ['building'], // re-open via flagged checkpoint
+  waiting: ['building'],
 }
 
+/** Card reads carry the fix comment's renderer-safe dressing (type + page-ness)
+ *  so a fix_comment card describes itself — the board never joins UI feeds. */
+const CARD_SELECT = `SELECT c.*, fc.note_type AS fc_note_type, fc.pin_x AS fc_pin_x
+   FROM cards c LEFT JOIN fix_comments fc ON fc.card_id = c.id`
+
 export function getCard(db: Db, id: string): Card {
-  const row = db.prepare(`SELECT * FROM cards WHERE id = ?`).get(id) as CardRow | undefined
+  const row = db.prepare(`${CARD_SELECT} WHERE c.id = ?`).get(id) as CardRow | undefined
   if (!row) throw new NotFoundError('card not found')
   return toCard(row)
 }
 
 export function listCards(db: Db, projectId: string): Card[] {
   const rows = db
-    .prepare(`SELECT * FROM cards WHERE project_id = ? ORDER BY position ASC`)
+    .prepare(`${CARD_SELECT} WHERE c.project_id = ? ORDER BY c.position ASC`)
     .all(projectId) as CardRow[]
   return rows.map(toCard)
 }
@@ -40,6 +48,7 @@ export function createCard(
   type: CardType,
   title: string,
   source: CardSource = 'user_added',
+  initialStatus: Extract<CardStatus, 'planned' | 'waiting'> = 'planned',
 ): Card {
   // FK guard: project must exist
   const exists = db.prepare(`SELECT 1 FROM projects WHERE id = ?`).get(projectId)
@@ -48,8 +57,8 @@ export function createCard(
   const id = randomUUID()
   db.prepare(
     `INSERT INTO cards (id, project_id, type, title, status, source, position, depends_on, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'planned', ?, ?, '[]', ?, ?)`,
-  ).run(id, projectId, type, title, source, nextPosition(db, projectId), now, now)
+     VALUES (?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)`,
+  ).run(id, projectId, type, title, initialStatus, source, nextPosition(db, projectId), now, now)
   return getCard(db, id)
 }
 

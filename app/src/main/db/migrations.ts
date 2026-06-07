@@ -99,6 +99,27 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_build_steps_session ON build_steps(session_id);
     `)
   },
+  // 4 — Phase 3: point-and-fix comments (visual context lives main-process-side only)
+  (db) => {
+    db.exec(`
+      CREATE TABLE fix_comments (
+        id              TEXT PRIMARY KEY,
+        card_id         TEXT NOT NULL UNIQUE REFERENCES cards(id) ON DELETE CASCADE,
+        project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        selector        TEXT,
+        bounding_box    TEXT,
+        screenshot_crop TEXT,
+        pin_x           REAL,
+        pin_y           REAL,
+        note            TEXT NOT NULL,
+        note_type       TEXT NOT NULL,
+        created_at      INTEGER NOT NULL
+      );
+
+      CREATE INDEX idx_fix_comments_project ON fix_comments(project_id);
+      CREATE INDEX idx_fix_comments_card ON fix_comments(card_id);
+    `)
+  },
 ]
 
 export function migrate(db: Database.Database): void {

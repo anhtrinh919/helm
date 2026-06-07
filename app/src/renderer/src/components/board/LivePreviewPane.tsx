@@ -2,6 +2,7 @@ import { createElement, useEffect, useRef, useState } from 'react'
 import type { PreviewState } from '@shared/ipc-schemas'
 import { isMock } from '../../bridge'
 import { usePreview } from '../../store/preview'
+import { PointAnnotations } from './PointModeOverlay'
 
 /** Stable default so the zustand selector never returns a fresh object (which
  *  would re-render every tick and blank the tree). */
@@ -38,7 +39,7 @@ export function LivePreviewPane({ projectId }: { projectId: string }): React.JSX
   }, [state])
 
   if (state.status === 'live' && !loadFailed) {
-    return <LiveStage url={state.url} onFail={() => setLoadFailed(true)} />
+    return <LiveStage url={state.url} projectId={projectId} onFail={() => setLoadFailed(true)} />
   }
 
   // none / building / snag / blocked (or a failed embed) → a calm centered panel.
@@ -55,8 +56,18 @@ export function LivePreviewPane({ projectId }: { projectId: string }): React.JSX
   )
 }
 
-/** The running app, full-bleed in a chrome-less stage (window dots only). */
-function LiveStage({ url, onFail }: { url: string; onFail: () => void }): React.JSX.Element {
+/** The running app, full-bleed in a chrome-less stage (window dots only).
+ *  The point-and-fix annotation layer (pins, rings, comment box) sits over the
+ *  embed — pointer-transparent so the embedded app still feels the cursor. */
+function LiveStage({
+  url,
+  projectId,
+  onFail,
+}: {
+  url: string
+  projectId: string
+  onFail: () => void
+}): React.JSX.Element {
   return (
     <div className="flex flex-1 flex-col overflow-hidden rounded-[18px] bg-stage brut-2">
       <div className="flex items-center gap-2 border-b-2 border-ink/10 px-4 py-2.5">
@@ -69,6 +80,7 @@ function LiveStage({ url, onFail }: { url: string; onFail: () => void }): React.
       </div>
       <div className="relative min-h-0 flex-1">
         <Embed url={url} onFail={onFail} />
+        <PointAnnotations projectId={projectId} />
       </div>
     </div>
   )

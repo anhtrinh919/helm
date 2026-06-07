@@ -8,4 +8,4 @@ TBD
 
 ## Status
 
-Phase 2 complete — Watch It Get Made. Phase 3 next: Point and Fix.
+Phase 3 complete — Point and Fix. Phase 3.5 next: The Rail.

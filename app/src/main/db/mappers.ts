@@ -47,6 +47,9 @@ export interface CardRow {
   session_id: string | null
   decision_prompt: string | null
   checkpoint: string | null
+  /** LEFT-JOINed from fix_comments (fix_comment cards only) — renderer-safe columns. */
+  fc_note_type?: string | null
+  fc_pin_x?: number | null
 }
 export interface SessionRow {
   id: string
@@ -129,6 +132,9 @@ export function toCard(row: CardRow): Card {
     sessionId: row.session_id,
     decisionPrompt: parse<DecisionPrompt | null>(row.decision_prompt, null),
     checkpoint: parse<Checkpoint | null>(row.checkpoint, null),
+    ...(row.fc_note_type
+      ? { noteType: row.fc_note_type as Card['noteType'], pageLevel: row.fc_pin_x == null }
+      : {}),
   }
 }
 

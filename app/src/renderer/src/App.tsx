@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useProjects } from './store/projects'
 import { usePreview } from './store/preview'
+import { usePointFix } from './store/pins'
 import { helm } from './bridge'
 import { FrontDoor } from './components/FrontDoor'
 import { ProjectSwitcher } from './components/ProjectSwitcher'
@@ -14,6 +15,7 @@ export default function App(): React.JSX.Element {
   const backToBoard = useProjects((s) => s.backToBoard)
   const applyBackgroundStatus = useProjects((s) => s.applyBackgroundStatus)
   const subscribePreview = usePreview((s) => s.subscribe)
+  const subscribePointFix = usePointFix((s) => s.subscribe)
 
   useEffect(() => {
     void init()
@@ -21,11 +23,13 @@ export default function App(): React.JSX.Element {
       applyBackgroundStatus(p.projectId, p.backgroundStatus),
     )
     const offPreview = subscribePreview()
+    const offPointFix = subscribePointFix()
     return () => {
       offBg()
       offPreview()
+      offPointFix()
     }
-  }, [init, applyBackgroundStatus, subscribePreview])
+  }, [init, applyBackgroundStatus, subscribePreview, subscribePointFix])
 
   if (view.name === 'front-door') return <FrontDoor />
   if (view.name === 'switcher') return <ProjectSwitcher />

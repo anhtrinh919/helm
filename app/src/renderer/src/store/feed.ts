@@ -34,12 +34,20 @@ interface FeedState {
   reset: () => void
 }
 
-/** Infer the UI status from a reattached session's feed + questions. */
+/** THE status rule — used for backfill on reattach AND recomputed on every live
+ *  push, so the two paths can never drift. */
 function inferStatus(events: FeedEvent[], questions: QuestionQueueItem[]): FeedStatus {
   // The last terminal marker wins — a stop or error after activity ends the session.
   const lastTerminal = [...events].reverse().find((e) => e.kind === 'stopped' || e.kind === 'error')
   if (lastTerminal) return lastTerminal.kind === 'stopped' ? 'stopped' : 'error'
-  if (events.some((e) => e.kind === 'checkpoint')) return 'done'
+  const last = events[events.length - 1]
+  // A checkpoint means 'done' only while it's still the live tail — a rejected
+  // fix continues the SAME session, so anything after the last checkpoint
+  // (the "sent it back" steering line, fresh narration) returns it to active.
+  if (last?.kind === 'checkpoint') return 'done'
+  // A decision prompt at the tail pauses immediately, even before its question
+  // row arrives on the separate question push.
+  if (last?.kind === 'decision_prompt') return 'paused_for_decision'
   if (questions.some((q) => q.status === 'pending' || q.status === 'reopened')) {
     return 'paused_for_decision'
   }
@@ -123,12 +131,8 @@ export const useFeed = create<FeedState>((set, get) => ({
   appendEvent: (ev) =>
     set((s) => {
       if (s.events.some((e) => e.id === ev.id)) return s
-      const next: Partial<FeedState> = { events: [...s.events, ev] }
-      if (ev.kind === 'checkpoint') next.status = 'done'
-      else if (ev.kind === 'stopped') next.status = 'stopped'
-      else if (ev.kind === 'error') next.status = 'error'
-      else if (ev.kind === 'decision_prompt') next.status = 'paused_for_decision'
-      return next as FeedState
+      const events = [...s.events, ev]
+      return { events, status: inferStatus(events, s.questions) }
     }),
 
   upsertQuestion: (q) =>
@@ -163,14 +167,23 @@ export const useFeed = create<FeedState>((set, get) => ({
   },
 
   approveCheckpoint: async (verdict, note) => {
-    const cardId = get().card?.id
-    if (!cardId) return
-    const res = await helm.cards.approveCheckpoint(cardId, verdict, note)
+    const card = get().card
+    if (!card) return
+    const res = await helm.cards.approveCheckpoint(card.id, verdict, note)
     if (isIpcError(res)) return
     set({ card: res.card })
-    // "Something's off" re-opens the build so it can take another pass — never
-    // leave the user stuck on a checkpoint they rejected.
-    if (verdict === 'flagged') await get().retry()
+    if (verdict === 'flagged') {
+      // Fix sessions (Phase 3): the main process resumes the SAME session with
+      // the rejection note — the feed continues live. Starting a new build
+      // session here would spawn a duplicate with the wrong prompt.
+      if (card.type === 'fix_comment') {
+        set({ status: 'active' })
+        return
+      }
+      // "Something's off" re-opens the build so it can take another pass — never
+      // leave the user stuck on a checkpoint they rejected.
+      await get().retry()
+    }
   },
 
   retry: async () => {

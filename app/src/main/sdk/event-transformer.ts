@@ -80,6 +80,14 @@ export function stripCode(text: string): string {
     ' ',
   )
   t = t.replace(/[A-Za-z]:\\[\w\\. @+~-]+/g, ' ')
+  // CSS selector paths (Phase 3): fix-session prompts carry a selector chain
+  // like `main > button#submit` or `nav > a:nth-of-type(2)`. Backtick spans are
+  // already stripped above — this catches a BARE echo of a selector chain.
+  t = t.replace(
+    /\b[a-z][\w-]*(?:[#.][\w-]+|:nth-of-type\(\d+\))*(?:\s*>\s*[a-z][\w-]*(?:[#.][\w-]+|:nth-of-type\(\d+\))*)+/g,
+    ' ',
+  )
+  t = t.replace(/\b[a-z][\w-]*(?:#[\w-]+|:nth-of-type\(\d+\))/g, ' ')
   // Collapse the whitespace the removals left behind.
   return t.replace(/[ \t]{2,}/g, ' ').replace(/ *\n */g, '\n').trim()
 }

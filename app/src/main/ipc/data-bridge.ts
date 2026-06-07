@@ -25,8 +25,15 @@ import {
   updateCheckpoint,
   promoteNextPlanned,
 } from '../db/cards'
+import type { SessionOrchestrator } from '../sdk/session-orchestrator'
 
 type GetWindow = () => BrowserWindow | null
+
+/** Phase 3 hook for fix-comment checkpoints — the orchestrator owns the whole
+ *  outcome (preview refresh, pin resolution, queue advance, reject-retry). */
+export interface FixCheckpointDeps {
+  orchestrator: SessionOrchestrator
+}
 
 function mapError(e: unknown): IpcError {
   if (e instanceof InvalidTransitionError) return { error: 'invalid_transition', from: e.from, to: e.to }
@@ -40,10 +47,13 @@ function mapError(e: unknown): IpcError {
   return { error: 'db_write_failed', message: e instanceof Error ? e.message : 'unknown error' }
 }
 
-export function registerDataBridge(db: Db, getWindow: GetWindow): void {
-  const pushBoard = (projectId: string, card: Card): void => {
+export function registerDataBridge(db: Db, getWindow: GetWindow, fix?: FixCheckpointDeps): void {
+  const send = (channel: string, payload: unknown): void => {
     const win = getWindow()
-    if (win && !win.isDestroyed()) win.webContents.send(CH.boardUpdate, { projectId, cardId: card.id, card })
+    if (win && !win.isDestroyed()) win.webContents.send(channel, payload)
+  }
+  const pushBoard = (projectId: string, card: Card): void => {
+    send(CH.boardUpdate, { projectId, cardId: card.id, card })
   }
 
   ipcMain.handle(CH.projectsList, () => {
@@ -98,12 +108,20 @@ export function registerDataBridge(db: Db, getWindow: GetWindow): void {
     try {
       const { cardId, verdict, flagNote } = ApproveCheckpointRequest.parse(raw)
       let card = updateCheckpoint(db, cardId, verdict, flagNote)
+
+      // Fix-comment cards (Phase 3): the whole outcome is the orchestrator's.
+      if (card.type === 'fix_comment' && fix) {
+        return { card: fix.orchestrator.resolveFixCheckpoint(cardId, verdict, flagNote) }
+      }
+
       if (verdict === 'approved') {
         // Approving a finished build completes the item and pulls the next one up.
         if (card.status === 'building') card = updateCardStatus(db, cardId, 'done')
         pushBoard(card.projectId, card)
         const promoted = promoteNextPlanned(db, card.projectId)
         if (promoted) pushBoard(card.projectId, promoted)
+        // A freed spotlight lets a queued fix start (fix-after-build queueing).
+        fix?.orchestrator.maybeStartNextFix(card.projectId)
       } else {
         pushBoard(card.projectId, card)
       }

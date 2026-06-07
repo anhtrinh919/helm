@@ -148,3 +148,30 @@ describe('event-transformer (hard gate)', () => {
     expect(stripCode('No code here at all.')).toBe('No code here at all.')
   })
 })
+
+describe('Phase 3 — CSS selector scrub (fix sessions)', () => {
+  it('strips a bare selector chain echoed in narration', () => {
+    const out = stripCode('I found the element at main > button#submit and fixed its colour.')
+    expect(out).not.toContain('button#submit')
+    expect(out).not.toContain('>')
+    expect(out).toContain('fixed its colour')
+  })
+
+  it('strips nth-of-type chains', () => {
+    const out = stripCode('Looking at nav > a:nth-of-type(2) now.')
+    expect(out).not.toContain('nth-of-type')
+    expect(out).not.toContain('nav >')
+  })
+
+  it('strips a lone tag#id token', () => {
+    const out = stripCode('The header#main element was the problem.')
+    expect(out).not.toContain('header#main')
+  })
+
+  it('leaves ordinary prose with comparisons intact', () => {
+    expect(stripCode('We need 5 > 3 here.')).toBe('We need 5 > 3 here.')
+    expect(stripCode('Settings then Profile, in that order.')).toBe(
+      'Settings then Profile, in that order.',
+    )
+  })
+})

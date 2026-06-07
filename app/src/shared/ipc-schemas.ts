@@ -29,11 +29,23 @@ export type ProjectStatus = z.infer<typeof ProjectStatus>
 export const BackgroundStatus = z.enum(['idle', 'active', 'needs_you', 'failed'])
 export type BackgroundStatus = z.infer<typeof BackgroundStatus>
 
-export const CardType = z.enum(['feature', 'bug', 'decision'])
+export const CardType = z.enum(['feature', 'bug', 'decision', 'fix_comment'])
 export type CardType = z.infer<typeof CardType>
 
-export const CardStatus = z.enum(['planned', 'up_next', 'building', 'needs_you', 'failed', 'done'])
+/** 'waiting' (Phase 3) = a filed point-and-fix comment whose fix hasn't been started. */
+export const CardStatus = z.enum([
+  'planned',
+  'up_next',
+  'building',
+  'needs_you',
+  'failed',
+  'done',
+  'waiting',
+])
 export type CardStatus = z.infer<typeof CardStatus>
+
+export const NoteType = z.enum(['bug', 'change'])
+export type NoteType = z.infer<typeof NoteType>
 
 export const CardSource = z.enum(['plan_seed', 'user_added', 'agent_raised'])
 export type CardSource = z.infer<typeof CardSource>
@@ -113,6 +125,11 @@ export const Card = z.object({
   sessionId: z.string().nullable(),
   decisionPrompt: DecisionPrompt.nullable(),
   checkpoint: Checkpoint.nullable(),
+  /** Fix-comment dressing (Phase 3, `fix_comment` cards only): the comment's
+   *  type and whether it pointed at the whole page rather than one element.
+   *  Renderer-safe — derived from the fix record's non-private columns. */
+  noteType: NoteType.optional(),
+  pageLevel: z.boolean().optional(),
 })
 export type Card = z.infer<typeof Card>
 
@@ -154,6 +171,43 @@ export const PreviewState = z.discriminatedUnion('status', [
   z.object({ status: z.literal('blocked') }),
 ])
 export type PreviewState = z.infer<typeof PreviewState>
+
+export const BoundingBox = z.object({
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number(),
+})
+export type BoundingBox = z.infer<typeof BoundingBox>
+
+/**
+ * A point-and-fix comment's full record (Phase 3). MAIN-PROCESS ONLY —
+ * `screenshotCrop` and `selector` never cross to the renderer. The renderer
+ * sees only `FixCommentPin` below.
+ */
+export const FixComment = z.object({
+  id: z.string(),
+  cardId: z.string(),
+  projectId: z.string(),
+  selector: z.string().nullable(),
+  boundingBox: BoundingBox.nullable(),
+  screenshotCrop: z.string().nullable(),
+  pinX: z.number().nullable(),
+  pinY: z.number().nullable(),
+  note: z.string(),
+  noteType: NoteType,
+  createdAt: z.number(),
+})
+export type FixComment = z.infer<typeof FixComment>
+
+/** The renderer-safe pin shape — position + type only, no visual context. */
+export const FixCommentPin = z.object({
+  cardId: z.string(),
+  pinX: z.number().nullable(),
+  pinY: z.number().nullable(),
+  noteType: NoteType,
+})
+export type FixCommentPin = z.infer<typeof FixCommentPin>
 
 export const FeedEvent = z.object({
   id: z.string(),
@@ -265,7 +319,67 @@ export const GetPreviewStateRequest = z.object({ projectId: z.string() })
 export const StartDevServerRequest = z.object({ projectId: z.string() })
 export const StopDevServerRequest = z.object({ projectId: z.string() })
 
+/* --------------------------- Phase 3: point-and-fix --------------------------- */
+
+export const RegisterPointRequest = z.object({
+  projectId: z.string(),
+  // Element-level capture is GEOMETRY ONLY (all omitted for page-level
+  // comments). The selector and screenshot crop never appear here by
+  // construction — main merges its own pending capture at register time.
+  boundingBox: BoundingBox.optional(),
+  pinX: z.number().min(0).max(1).optional(),
+  pinY: z.number().min(0).max(1).optional(),
+  note: z.string().min(1).max(500),
+  noteType: NoteType,
+})
+export type RegisterPointRequest = z.infer<typeof RegisterPointRequest>
+
+export const StartFixSessionRequest = z.object({ projectId: z.string(), cardId: z.string() })
+export type StartFixSessionRequest = z.infer<typeof StartFixSessionRequest>
+
+/** Started now (navigate to the session) vs queued behind the running fix (stay put). */
+export const StartFixSessionResponse = z.discriminatedUnion('queued', [
+  z.object({ queued: z.literal(false), session: Session }),
+  z.object({ queued: z.literal(true), session: z.null() }),
+])
+export type StartFixSessionResponse = z.infer<typeof StartFixSessionResponse>
+
+export const ListPinsRequest = z.object({ projectId: z.string() })
+export const ListPinsResponse = z.object({
+  pins: z.array(FixCommentPin),
+  /** Cards queued behind the running fix — display state, resets on relaunch. */
+  queuedCardIds: z.array(z.string()),
+})
+export type ListPinsResponse = z.infer<typeof ListPinsResponse>
+
+export const PointModeRequest = z.object({ projectId: z.string() })
+
 /* --------------------------- push payloads --------------------------- */
+
+export const PinsUpdatePush = z.object({
+  projectId: z.string(),
+  pins: z.array(FixCommentPin),
+  /** Cards queued behind the running fix — pushed by the queue's one owner
+   *  (the orchestrator) so the board never keeps its own copy of this fact. */
+  queuedCardIds: z.array(z.string()),
+})
+export type PinsUpdatePush = z.infer<typeof PinsUpdatePush>
+
+/**
+ * Point-mode events from the embedded app, relayed by main. Renderer-safe by
+ * construction: geometry only — the CSS selector and screenshot never cross.
+ */
+export const PointCapturePush = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('captured'),
+    projectId: z.string(),
+    boundingBox: BoundingBox,
+    pinX: z.number(),
+    pinY: z.number(),
+  }),
+  z.object({ kind: z.literal('exit'), projectId: z.string() }),
+])
+export type PointCapturePush = z.infer<typeof PointCapturePush>
 
 export const FeedEventPush = z.object({ sessionId: z.string(), event: FeedEvent })
 export type FeedEventPush = z.infer<typeof FeedEventPush>
@@ -296,6 +410,39 @@ export type StartProbeResponse = z.infer<typeof StartProbeResponse>
 export const GetFeedResponse = z.object({ events: z.array(FeedEvent) })
 export type GetFeedResponse = z.infer<typeof GetFeedResponse>
 
+/* --------------------------- Phase 4: history tabs --------------------------- */
+
+/** One answered decision question, with its session + card context. */
+export const DecisionEntry = z.object({
+  id: z.string(),
+  sessionId: z.string(),
+  sessionName: z.string(),
+  cardId: z.string().nullable(),
+  cardTitle: z.string().nullable(),
+  question: z.string(),
+  answer: z.string(),
+  answeredAt: z.number(),
+})
+export type DecisionEntry = z.infer<typeof DecisionEntry>
+
+/** One completed build step, with card + session context (Progress tab). */
+export const ProgressEntry = z.object({
+  id: z.string(),
+  sessionId: z.string(),
+  sessionName: z.string(),
+  cardId: z.string(),
+  cardTitle: z.string(),
+  cardStepLabel: z.string().nullable(),
+  status: BuildStepStatus,
+  startedAt: z.number(),
+  completedAt: z.number().nullable(),
+})
+export type ProgressEntry = z.infer<typeof ProgressEntry>
+
+export const GetDecisionsRequest = z.object({ projectId: z.string() })
+export const GetProgressRequest = z.object({ projectId: z.string() })
+export const GetDocsRequest = z.object({ projectId: z.string() })
+
 /* --------------------------- channel names --------------------------- */
 
 export const CH = {
@@ -323,10 +470,22 @@ export const CH = {
   previewGetState: 'preview:get-state',
   devserverStart: 'devserver:start',
   devserverStop: 'devserver:stop',
+  // point-and-fix (Phase 3)
+  pointsRegister: 'points:register',
+  pointsList: 'points:list',
+  pointsActivate: 'points:activate',
+  pointsDeactivate: 'points:deactivate',
+  fixSessionsStart: 'fix-sessions:start',
+  // history (Phase 4 tabs)
+  historyDecisions: 'history:decisions',
+  historyProgress: 'history:progress',
+  historyDocs: 'history:docs',
   // pushes
   feedEvent: 'feed:event',
   boardUpdate: 'board:update',
   backgroundStatus: 'project:background-status',
   questionUpdate: 'question:update',
   previewUpdate: 'preview:update',
+  pointsUpdate: 'points:update',
+  pointCaptured: 'point:captured',
 } as const

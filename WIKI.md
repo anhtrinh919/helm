@@ -43,6 +43,23 @@ The per-project working directory is only created the first time a build session
 **Dev-server resume-on-reopen checks PID liveness, not just non-null `dev_pid`.**
 On app launch, `dev_pid` in the DB may be stale (process died between sessions). The reopen logic checks `process.kill(pid, 0)` to confirm the process is actually alive before pushing a `live` preview update. If the liveness check fails, the preview falls back to `none` — a build session will restart the server. A false "server is live" push when the PID is dead causes the webview to load a URL that isn't listening, which surfaces as a blank preview with no error chrome.
 
+## Phase 3 — Point and Fix Learnings
+
+**Point-and-fix sessions are structurally identical to build sessions — reuse, don't fork.**
+Phase 3 wired visual-context fix sessions on top of the existing `sessions:start` / session-orchestrator stack rather than creating a new session type. The IPC surface gains `comments:*` channels and a `FixSessionBridge`, but the execution path (orchestrator → runner → SDK → event-transformer) is unchanged. Adding a new "fix session type" would have required parallel maintenance of two session stacks; the correct design is one engine with a richer context payload.
+
+**The `annotation_layer` overlay (absolute-positioned SVG) must be mounted outside the `<webview>` — not inside it.**
+Clicking into the `<webview>` at the element level is not possible without `executeJavaScript` injection into the embedded app, which is fragile and app-specific. Phase 3 renders an absolute-positioned annotation layer in the Helm renderer that sits on top of the `<webview>` at the Helm DOM level, intercepts pointer events, and uses `webview.executeJavaScript` only for coordinate resolution. The `<webview>` itself remains unmodified and app-agnostic.
+
+**Comment cards on the board need a distinct visual affordance from build cards — same column, different shape.**
+Phase 3 comment cards (type: `comment`, `bug`, `tweak`) land in the same Kanban columns as build cards but need a different visual identity so the user can tell "things being fixed" apart from "things being built." Using card `type` as a CSS discriminator (border color, icon) is the correct signal — not a separate column or separate list.
+
+**The ad-hoc Phase 4 deliverables (real history tabs, parallel sessions) shipped cleanly on the Phase 3 branch.**
+After the 85/100 Phase 3 review passed, Decisions, Progress, and Docs tabs were wired to real DB queries and the one-at-a-time session queue was removed — all on `phase-3-point-and-fix` before merge. This was safe because the engine and DB were already stable. The lesson: the branch constraint is "no scope beyond what review checked" during review; post-review additions to a completed branch are fine if the change set is bounded and doesn't touch the reviewed code path.
+
+**`dogfoodPid` in `.build-state.json` must be nulled after a session ends — stale PIDs mislead the next orchestrator.**
+The dogfood handoff sets `dogfoodPid` to the dev server PID. If the feature branch is rebased or the session ends without cleanup, a future orchestrator reads a non-null `dogfoodPid` and assumes a live server exists. Phase 3 cleanup added an explicit null-write step as part of the handoff teardown pattern.
+
 ## From Global WIKI — claude-agent-sdk
 
 **Claude Agent SDK: always pass `pathToClaudeCodeExecutable`**
