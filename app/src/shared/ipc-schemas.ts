@@ -410,6 +410,39 @@ export type StartProbeResponse = z.infer<typeof StartProbeResponse>
 export const GetFeedResponse = z.object({ events: z.array(FeedEvent) })
 export type GetFeedResponse = z.infer<typeof GetFeedResponse>
 
+/* --------------------------- Phase 4: history tabs --------------------------- */
+
+/** One answered decision question, with its session + card context. */
+export const DecisionEntry = z.object({
+  id: z.string(),
+  sessionId: z.string(),
+  sessionName: z.string(),
+  cardId: z.string().nullable(),
+  cardTitle: z.string().nullable(),
+  question: z.string(),
+  answer: z.string(),
+  answeredAt: z.number(),
+})
+export type DecisionEntry = z.infer<typeof DecisionEntry>
+
+/** One completed build step, with card + session context (Progress tab). */
+export const ProgressEntry = z.object({
+  id: z.string(),
+  sessionId: z.string(),
+  sessionName: z.string(),
+  cardId: z.string(),
+  cardTitle: z.string(),
+  cardStepLabel: z.string().nullable(),
+  status: BuildStepStatus,
+  startedAt: z.number(),
+  completedAt: z.number().nullable(),
+})
+export type ProgressEntry = z.infer<typeof ProgressEntry>
+
+export const GetDecisionsRequest = z.object({ projectId: z.string() })
+export const GetProgressRequest = z.object({ projectId: z.string() })
+export const GetDocsRequest = z.object({ projectId: z.string() })
+
 /* --------------------------- channel names --------------------------- */
 
 export const CH = {
@@ -443,6 +476,10 @@ export const CH = {
   pointsActivate: 'points:activate',
   pointsDeactivate: 'points:deactivate',
   fixSessionsStart: 'fix-sessions:start',
+  // history (Phase 4 tabs)
+  historyDecisions: 'history:decisions',
+  historyProgress: 'history:progress',
+  historyDocs: 'history:docs',
   // pushes
   feedEvent: 'feed:event',
   boardUpdate: 'board:update',

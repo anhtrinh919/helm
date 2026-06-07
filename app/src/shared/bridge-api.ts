@@ -3,6 +3,7 @@ import type {
   BoardUpdatePush,
   Card,
   CardStatus,
+  DecisionEntry,
   FeedEvent,
   FeedEventPush,
   FixCommentPin,
@@ -11,6 +12,7 @@ import type {
   PointCapturePush,
   PreviewState,
   PreviewUpdatePush,
+  ProgressEntry,
   Project,
   QuestionQueueItem,
   QuestionUpdatePush,
@@ -103,6 +105,12 @@ export interface HelmApi {
     onPreviewUpdate(cb: (p: PreviewUpdatePush) => void): () => void
     onPinsUpdate(cb: (p: PinsUpdatePush) => void): () => void
     onPointCapture(cb: (p: PointCapturePush) => void): () => void
+  }
+  /** Phase 4 history tabs: decisions log, progress timeline, docs. */
+  history: {
+    decisions(projectId: string): Promise<Result<{ entries: DecisionEntry[] }>>
+    progress(projectId: string): Promise<Result<{ entries: ProgressEntry[] }>>
+    docs(projectId: string): Promise<Result<{ content: string | null }>>
   }
   /** Group 1 probe — dev smoke test of the live engine. */
   startProbe(prompt: string): Promise<Result<{ sessionId: string }>>

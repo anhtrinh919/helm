@@ -6,7 +6,7 @@ import { useProjects } from '../../store/projects'
 import { Confetti } from '../Confetti'
 import { Rail } from '../Rail'
 import { TopBar } from './TopBar'
-import { TabStrip, StubPanel, type BoardTab } from './TabStrip'
+import { TabStrip, type BoardTab } from './TabStrip'
 import { LivePreviewPane } from './LivePreviewPane'
 import { SectionHeader } from './SectionHeader'
 import { SpineItem } from './SpineItem'
@@ -15,6 +15,9 @@ import { AddItemModal } from './AddItemModal'
 import { PointModeToggle } from './PointModeOverlay'
 import { FixCommentCard } from './FixCommentCard'
 import { usePointFix, NO_QUEUED } from '../../store/pins'
+import { DecisionsPanel } from './DecisionsPanel'
+import { ProgressPanel } from './ProgressPanel'
+import { DocsPanel } from './DocsPanel'
 
 /** Pull "N of M" out of a "Step N of M: ..." label for the in-flight eyebrow. */
 function stepOfM(card: Card | null, total: number, doneCount: number): string {
@@ -127,8 +130,12 @@ export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.El
 
           {tab === 'preview' ? (
             <LivePreviewPane projectId={projectId} />
-          ) : tab !== 'board' ? (
-            <StubPanel tab={tab} />
+          ) : tab === 'decisions' ? (
+            <DecisionsPanel projectId={projectId} />
+          ) : tab === 'progress' ? (
+            <ProgressPanel projectId={projectId} />
+          ) : tab === 'docs' ? (
+            <DocsPanel projectId={projectId} />
           ) : (
             <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
               {needsYou && <NeedsYouHeadline card={needsYou} onAnswer={onAnswer} />}

@@ -639,6 +639,11 @@ export function createMockBridge(): HelmApi {
         return () => pointCaptureListeners.delete(cb)
       },
     },
+    history: {
+      decisions: async () => ({ entries: [] }),
+      progress: async () => ({ entries: [] }),
+      docs: async () => ({ content: null }),
+    },
     startProbe: async () => ({ sessionId: uid() }),
     getFeed: async (sessionId) => ({ events: feeds[sessionId] ?? [] }),
   }

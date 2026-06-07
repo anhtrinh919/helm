@@ -74,13 +74,14 @@ describe('SessionOrchestrator', () => {
     expect(getCard(db, cardId).sessionId).toBe(session.id)
   })
 
-  it('enforces one Building spotlight per project — a second start throws', () => {
+  it('Phase 4: a second start on the same project runs in parallel (no spotlight lock)', () => {
     const { orch, projectId, cardId } = setup()
     const second = createCard(db, projectId, 'feature', 'Reports')
     orch.start(projectId, cardId)
-    expect(() => orch.start(projectId, second.id)).toThrow()
-    // the second card never entered building
-    expect(getCard(db, second.id).status).toBe('planned')
+    expect(() => orch.start(projectId, second.id)).not.toThrow()
+    // both cards are now building simultaneously
+    expect(getCard(db, cardId).status).toBe('building')
+    expect(getCard(db, second.id).status).toBe('building')
   })
 
   it('persisted feed survives the live handle (backfill source of truth)', () => {

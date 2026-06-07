@@ -7,7 +7,6 @@ import { deriveBackgroundStatus } from '../db/projects'
 import { completeBuildStep, createBuildStep, failBuildStep } from '../db/build-steps'
 import type { DevServerManager } from './dev-server-manager'
 import {
-  findBuildingCard,
   getCard,
   setCardSession,
   setPendingCheckpoint,
@@ -21,7 +20,6 @@ import {
   NotFoundError,
   NotWaitingError,
   NoVisualContextError,
-  SpotlightOccupiedError,
 } from '../db/errors'
 import {
   createSession,
@@ -57,15 +55,7 @@ export class SessionOrchestrator {
   private interrupted = new Set<string>()
   /** Real-pipeline sessions → their build_step id (for completion / failure marking). */
   private buildStepBySession = new Map<string, string>()
-  /**
-   * The one-fix-at-a-time policy (Phase 3): one running fix per project, with
-   * the cards behind it in an ordered backlog. In-memory BY DESIGN — a queued
-   * card's stored status stays 'waiting', so a relaunch simply forgets queue
-   * order and the user starts the fix again. The orchestrator is the single
-   * owner of every transition (acquire, queue, release, advance).
-   */
-  private activeFix = new Map<string, string>() // projectId → running fix sessionId
-  private fixBacklog = new Map<string, string[]>() // projectId → ordered cardIds
+  // Phase 4: all fix sessions run in parallel — no queue, no busy lock.
 
   constructor(
     private db: Db,
@@ -94,18 +84,17 @@ export class SessionOrchestrator {
     this.send(CH.boardUpdate, { projectId: card.projectId, cardId: card.id, card })
   }
 
-  /** Cards queued behind the running fix (renderer display state). */
-  queuedFixCardIds(projectId: string): string[] {
-    return [...(this.fixBacklog.get(projectId) ?? [])]
+  /** Phase 4: no queue — always empty. */
+  queuedFixCardIds(_projectId: string): string[] {
+    return []
   }
 
-  /** Push the full pin list + queue membership — the one payload the board
-   *  trusts for fix-comment display state. */
+  /** Push the full pin list — Phase 4 has no queue so queuedCardIds is always []. */
   private pushPins(projectId: string): void {
     this.send(CH.pointsUpdate, {
       projectId,
       pins: listOpenPins(this.db, projectId),
-      queuedCardIds: this.queuedFixCardIds(projectId),
+      queuedCardIds: [],
     })
   }
 
@@ -236,34 +225,18 @@ export class SessionOrchestrator {
     setCardSession(this.db, cardId, session.id)
     this.pushBoard(updateCardStatus(this.db, cardId, 'building'))
     this.pushBackground(projectId)
-    this.activeFix.set(projectId, session.id)
 
     this.runFix(session.id, projectId, cardId, this.buildFixPrompt(fix), cwd)
     return session
   }
 
-  /**
-   * The single owner of the one-fix-at-a-time policy: start the fix now, or
-   * queue the card behind whatever is running (a fix or a regular build).
-   * Re-asking for an already-queued card is an idempotent "still queued".
-   */
+  /** Phase 4: start the fix immediately — all fixes run in parallel. */
   startOrQueueFix(
     projectId: string,
     cardId: string,
   ): { session: Session; queued: false } | { session: null; queued: true } {
-    const backlog = this.fixBacklog.get(projectId) ?? []
-    if (backlog.includes(cardId)) return { session: null, queued: true }
     const card = getCard(this.db, cardId)
     if (card.status !== 'waiting') throw new NotWaitingError('fix is not waiting to start')
-
-    const busy = this.activeFix.has(projectId) || findBuildingCard(this.db, projectId) != null
-    if (busy) {
-      backlog.push(cardId)
-      this.fixBacklog.set(projectId, backlog)
-      this.pushBoard(card)
-      this.pushPins(projectId) // queue membership changed — the board shows QUEUED
-      return { session: null, queued: true }
-    }
     return { session: this.startFix(projectId, cardId), queued: false }
   }
 
@@ -279,14 +252,7 @@ export class SessionOrchestrator {
       this.pushBoard(card)
       this.pushPins(card.projectId)
       if (this.devServer) {
-        // Bring the refreshed app up; state changes push preview:update on
-        // their own. The queue advances regardless of how the restart goes.
-        void this.devServer
-          .restart(card.projectId)
-          .catch(() => {})
-          .finally(() => this.maybeStartNextFix(card.projectId))
-      } else {
-        this.maybeStartNextFix(card.projectId)
+        void this.devServer.restart(card.projectId).catch(() => {})
       }
     } else {
       if (card.sessionId) this.resumeWithRejection(card.sessionId, flagNote ?? '')
@@ -318,38 +284,18 @@ export class SessionOrchestrator {
     } catch {
       /* already building (checkpoint pending) — fine */
     }
-    this.activeFix.set(session.projectId, sessionId)
     this.pushBackground(session.projectId)
     this.emit(makeFeedEvent(sessionId, 'steering', `You sent it back: ${flagNote}`))
 
     this.runFix(sessionId, session.projectId, cardId, this.buildFixPrompt(fix, flagNote), cwd)
   }
 
-  /** A fix resolved (approved) or failed — free the slot and start the next
-   *  queued fix silently (board updates only, never navigation). */
-  maybeStartNextFix(projectId: string): void {
-    this.activeFix.delete(projectId)
-    if (findBuildingCard(this.db, projectId)) return // something else is in flight
-    const nextCardId = this.fixBacklog.get(projectId)?.shift()
-    if (!nextCardId) return
-    this.pushPins(projectId) // the queue shrank — the board drops its QUEUED badge
-    try {
-      this.startFix(projectId, nextCardId)
-    } catch {
-      // The queued card vanished or can't start — drop it and try the one behind.
-      this.maybeStartNextFix(projectId)
-    }
-  }
+  /** Phase 4: no queue to advance. Kept for call-site compatibility. */
+  maybeStartNextFix(_projectId: string): void {}
 
-  /** Open a scoped session for a card and start the live build. */
+  /** Open a scoped session for a card and start the live build. Phase 4: multiple builds run in parallel. */
   start(projectId: string, cardId: string): Session {
     const card = getCard(this.db, cardId)
-    // Phase 1 hard invariant: one Building spotlight per project at a time.
-    const occupied = findBuildingCard(this.db, projectId)
-    if (occupied && occupied.id !== cardId) {
-      throw new SpotlightOccupiedError(occupied.sessionId ?? '')
-    }
-
     const session = createSession(this.db, projectId, cardId, card.stepLabel ?? card.title)
     setCardSession(this.db, cardId, session.id)
 

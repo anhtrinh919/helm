@@ -9,6 +9,7 @@ import { registerSessionBridge } from './ipc/session-bridge'
 import { registerWizardBridge } from './ipc/wizard-bridge'
 import { registerPreviewBridge } from './ipc/preview-bridge'
 import { registerPointsBridge } from './ipc/points-bridge'
+import { registerHistoryBridge } from './ipc/history-bridge'
 import { SessionOrchestrator } from './sdk/session-orchestrator'
 import { DevServerManager } from './sdk/dev-server-manager'
 import { WizardOrchestrator } from './sdk/wizard-orchestrator'
@@ -79,6 +80,7 @@ void app.whenReady().then(() => {
   registerSessionBridge(db, orchestrator)
   registerWizardBridge(db, wizard, getWindow)
   registerPreviewBridge(db, devServer)
+  registerHistoryBridge(db)
   registerPointsBridge(db, {
     capture: pointCapture,
     devServer,

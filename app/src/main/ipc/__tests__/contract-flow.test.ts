@@ -108,16 +108,16 @@ describe('IPC contract flow (Stage 4 integration)', () => {
     })
   })
 
-  it('sessions:start opens an active session; a second concurrent start returns session_already_active', async () => {
+  it('Phase 4: sessions:start opens sessions in parallel — a second concurrent start also succeeds', async () => {
     const { project } = await call(CH.projectsCreate, { name: 'p' })
     const a = await call(CH.cardsCreate, { projectId: project.id, type: 'feature', title: 'A' })
     const b = await call(CH.cardsCreate, { projectId: project.id, type: 'feature', title: 'B' })
 
-    const started = await call(CH.sessionsStart, { projectId: project.id, cardId: a.card.id })
-    expect(started.session).toMatchObject({ status: 'active', projectId: project.id })
+    const first = await call(CH.sessionsStart, { projectId: project.id, cardId: a.card.id })
+    expect(first.session).toMatchObject({ status: 'active', projectId: project.id })
 
-    const blocked = await call(CH.sessionsStart, { projectId: project.id, cardId: b.card.id })
-    expect(blocked.error).toBe('session_already_active')
+    const second = await call(CH.sessionsStart, { projectId: project.id, cardId: b.card.id })
+    expect(second.session).toMatchObject({ status: 'active', projectId: project.id })
   })
 
   it('sessions:answer-decision on an active (not paused) session returns not_awaiting_decision', async () => {

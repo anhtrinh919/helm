@@ -243,19 +243,17 @@ describe('fix-sessions:start', () => {
     expect(fr.last().opts.permissionMode).toBe('bypassPermissions')
   })
 
-  it('a second start while one runs queues the card (stored status stays waiting)', async () => {
+  it('Phase 4: a second start while one runs starts in parallel immediately', async () => {
     await goLive()
     const { card: c1 } = await register()
     const { card: c2 } = await register({ note: 'Header is too dark', noteType: 'change' })
     await call(CH.fixSessionsStart, { projectId, cardId: c1.id })
     const res = await call(CH.fixSessionsStart, { projectId, cardId: c2.id })
-    expect(res).toEqual({ session: null, queued: true })
-    expect(getCard(db, c2.id).status).toBe('waiting')
-    // idempotent re-start while queued
-    expect(await call(CH.fixSessionsStart, { projectId, cardId: c2.id })).toEqual({
-      session: null,
-      queued: true,
-    })
+    expect(res.queued).toBe(false)
+    expect(res.session).toBeTruthy()
+    // both cards building simultaneously
+    expect(getCard(db, c1.id).status).toBe('building')
+    expect(getCard(db, c2.id).status).toBe('building')
   })
 
   it('non-fix cards and unknown cards → not_found', async () => {
@@ -302,23 +300,17 @@ describe('checkpoint approve / reject for fix sessions', () => {
     expect(events.some((e) => e.kind === 'checkpoint' && e.text.includes('the fix'))).toBe(true)
   })
 
-  it('approve: card → done, preview restarts, queued fix auto-starts', async () => {
+  it('approve: card → done, preview restarts', async () => {
     await goLive()
     const { cardId } = await startAndFinishFix()
-    const { card: c2 } = await register({ note: 'Header is too dark', noteType: 'change' })
-    await call(CH.fixSessionsStart, { projectId, cardId: c2.id }) // queued
     const spawnsBefore = devDeps.restarts.length
-    const runsBefore = fr.runs.length
 
     await call(CH.cardsApproveCheckpoint, { cardId, verdict: 'approved' })
     expect(getCard(db, cardId).status).toBe('done')
 
     await vi.waitFor(() => {
       expect(devDeps.restarts.length).toBeGreaterThan(spawnsBefore) // preview refreshed
-      expect(fr.runs.length).toBe(runsBefore + 1) // queued fix auto-started
     })
-    expect(getCard(db, c2.id).status).toBe('building')
-    expect(fr.last().opts.prompt).toContain('Header is too dark')
   })
 
   it('reject: the session retries with the note, then reaches a new checkpoint', async () => {
@@ -345,17 +337,18 @@ describe('checkpoint approve / reject for fix sessions', () => {
     expect(getCard(db, cardId).checkpoint?.status).toBe('pending')
   })
 
-  it('a failed fix frees the slot and the queued card auto-starts', async () => {
+  it('Phase 4: a failed fix does not affect parallel running fixes', async () => {
     await goLive()
     const { card: c1 } = await register()
     const { card: c2 } = await register({ note: 'Second thing', noteType: 'bug' })
     await call(CH.fixSessionsStart, { projectId, cardId: c1.id })
-    await call(CH.fixSessionsStart, { projectId, cardId: c2.id }) // queued
-    const runsBefore = fr.runs.length
+    await call(CH.fixSessionsStart, { projectId, cardId: c2.id }) // both start immediately
+    expect(getCard(db, c1.id).status).toBe('building')
+    expect(getCard(db, c2.id).status).toBe('building')
 
-    fr.last().cb.onError('boom')
+    // c1 fails — c2 keeps running independently
+    fr.runs[0]!.cb.onError('boom')
     expect(getCard(db, c1.id).status).toBe('failed')
-    expect(fr.runs.length).toBe(runsBefore + 1)
     expect(getCard(db, c2.id).status).toBe('building')
   })
 })
@@ -413,7 +406,7 @@ describe('remaining contract errors + push shapes (Stage 4)', () => {
     expect(JSON.stringify(pins?.payload)).not.toContain('selector')
   })
 
-  it('queueing a fix pushes queue membership; starting it pushes the shrunk queue', async () => {
+  it('Phase 4: queuedCardIds is always empty (no queue — parallel starts)', async () => {
     const sends: { channel: string; payload: { projectId?: string; queuedCardIds?: string[] } }[] = []
     const fakeWindow = {
       isDestroyed: () => false,
@@ -427,18 +420,12 @@ describe('remaining contract errors + push shapes (Stage 4)', () => {
     const { card: c1 } = await register()
     const { card: c2 } = await register({ note: 'Header is too dark', noteType: 'change' })
     await call(CH.fixSessionsStart, { projectId, cardId: c1.id })
-    await call(CH.fixSessionsStart, { projectId, cardId: c2.id }) // queued
+    await call(CH.fixSessionsStart, { projectId, cardId: c2.id }) // starts immediately
 
-    const queuedPush = sends.filter((s) => s.channel === CH.pointsUpdate).at(-1)
-    expect(queuedPush?.payload.queuedCardIds).toEqual([c2.id]) // board learns QUEUED from main
-
-    // Finish + approve c1 — the queue advances and the push reflects the drain.
-    fr.last().cb.onMessage(resultSuccess())
-    fr.last().cb.onClose()
-    await call(CH.cardsApproveCheckpoint, { cardId: c1.id, verdict: 'approved' })
-    await vi.waitFor(() => {
-      const last = sends.filter((s) => s.channel === CH.pointsUpdate).at(-1)
-      expect(last?.payload.queuedCardIds).toEqual([])
-    })
+    // All pointsUpdate pushes should have empty queuedCardIds
+    const pushes = sends.filter((s) => s.channel === CH.pointsUpdate)
+    for (const p of pushes) {
+      expect(p.payload.queuedCardIds).toEqual([])
+    }
   })
 })

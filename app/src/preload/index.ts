@@ -44,6 +44,11 @@ const api: HelmApi = {
   fixSessions: {
     start: (projectId, cardId) => ipcRenderer.invoke(CH.fixSessionsStart, { projectId, cardId }),
   },
+  history: {
+    decisions: (projectId) => ipcRenderer.invoke(CH.historyDecisions, { projectId }),
+    progress: (projectId) => ipcRenderer.invoke(CH.historyProgress, { projectId }),
+    docs: (projectId) => ipcRenderer.invoke(CH.historyDocs, { projectId }),
+  },
   events: {
     onBoardUpdate: (cb) => subscribe(CH.boardUpdate, cb),
     onBackgroundStatus: (cb) => subscribe(CH.backgroundStatus, cb),

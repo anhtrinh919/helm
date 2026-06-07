@@ -15,7 +15,6 @@ import {
   CannotReopenError,
   NotAwaitingDecisionError,
   NotFoundError,
-  SpotlightOccupiedError,
 } from '../db/errors'
 import { listQuestions } from '../db/question-queue'
 import type { SessionOrchestrator } from '../sdk/session-orchestrator'
@@ -23,7 +22,6 @@ import { SdkInitError } from '../sdk/session-runner'
 
 function mapError(e: unknown): IpcError {
   if (e instanceof SdkInitError) return { error: 'sdk_init_failed', message: e.message }
-  if (e instanceof SpotlightOccupiedError) return { error: 'session_already_active', sessionId: e.sessionId }
   if (e instanceof NotAwaitingDecisionError) return { error: 'not_awaiting_decision' }
   if (e instanceof NotFoundError) return { error: 'not_found' }
   if (e instanceof CannotReopenError) return { error: 'cannot_reopen' }
