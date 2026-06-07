@@ -85,6 +85,19 @@ export function FeedEventRow({ event }: { event: FeedEvent }): React.JSX.Element
     )
   }
 
+  // Phase 4 triage: a request was parked on the For-later shelf.
+  if (event.kind === 'parked') {
+    return (
+      <div className="flex gap-3">
+        {ts}
+        <div className="flex items-center gap-2 text-sm font-semibold text-soft">
+          <span className="grid h-4 w-4 place-items-center rounded-full bg-soft/25 text-[9px] text-ink">⊕</span>
+          {event.text}
+        </div>
+      </div>
+    )
+  }
+
   // narration
   return (
     <div className="flex gap-3">

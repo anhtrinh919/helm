@@ -7,6 +7,7 @@ import type {
   FeedEvent,
   FeedEventPush,
   FixCommentPin,
+  ImportScanResponse,
   PinsUpdatePush,
   PlanBlock,
   PointCapturePush,
@@ -14,10 +15,13 @@ import type {
   PreviewUpdatePush,
   ProgressEntry,
   Project,
+  ProjectMode,
   QuestionQueueItem,
   QuestionUpdatePush,
   RegisterPointRequest,
   Session,
+  ShelfItem,
+  ShelfUpdatePush,
   StartFixSessionResponse,
   SteerMode,
   WizardScopingResponse,
@@ -34,6 +38,29 @@ export interface HelmApi {
     list(): Promise<Result<{ projects: Project[] }>>
     create(name: string): Promise<Result<{ project: Project }>>
     get(projectId: string): Promise<Result<{ project: Project; cards: Card[] }>>
+    /** Phase 4 project management. */
+    rename(projectId: string, name: string): Promise<Result<{ project: Project }>>
+    delete(projectId: string): Promise<Result<{ ok: true }>>
+    setMode(projectId: string, mode: ProjectMode): Promise<Result<{ project: Project }>>
+    /** Advance the Build rail; step === plan length triggers the celebration. */
+    setRailStep(projectId: string, step: number): Promise<Result<{ project: Project }>>
+  }
+  /** Phase 4 "For later" shelf — parked mid-rail requests. */
+  shelf: {
+    list(projectId: string): Promise<Result<{ items: ShelfItem[] }>>
+    add(projectId: string, title: string): Promise<Result<{ item: ShelfItem }>>
+    /** Move a parked item onto the board as a real card. */
+    promote(itemId: string, projectId: string): Promise<Result<{ card: Card }>>
+  }
+  /** Phase 4 import — bring an existing AI-built local web app into Helm. */
+  import: {
+    scan(folderPath: string): Promise<Result<ImportScanResponse>>
+    start(
+      projectId: string,
+      folderPath: string,
+      startCommand: string,
+      port: number,
+    ): Promise<Result<{ ok: true; url: string }>>
   }
   cards: {
     create(projectId: string, type: 'feature' | 'bug', title: string): Promise<Result<{ card: Card }>>
@@ -60,10 +87,17 @@ export interface HelmApi {
       sessionId: string,
       questionId: string,
     ): Promise<Result<{ question: QuestionQueueItem }>>
+    /** Phase 4: explicit user stop (the Stop button). */
+    stop(sessionId: string): Promise<Result<{ ok: true }>>
   }
   wizard: {
-    /** Start the scoping conversation for a new project; returns the first question. */
-    startScoping(projectId: string, idea: string): Promise<Result<WizardScopingResponse>>
+    /** Start the scoping conversation for a new project; returns the first question.
+     *  mode 'iterate' (Phase 4) scopes to ONE combined scaffold+first-feature step. */
+    startScoping(
+      projectId: string,
+      idea: string,
+      mode?: ProjectMode,
+    ): Promise<Result<WizardScopingResponse>>
     /** Answer the current scoping question; returns the next question or the finished plan. */
     answerScoping(sessionId: string, answer: string): Promise<Result<WizardScopingResponse>>
     /** Approve the plan: seeds the board and names the project. */
@@ -72,6 +106,9 @@ export interface HelmApi {
       name: string,
       plan: PlanBlock[],
     ): Promise<Result<{ project: Project; cards: Card[] }>>
+    /** Phase 4: persist/restore the wizard's UI state so Q&A survives view switches. */
+    saveState(projectId: string, state: string | null): Promise<Result<{ ok: true }>>
+    getState(projectId: string): Promise<Result<{ state: string | null }>>
   }
   /** Live Preview (Phase 2): query state + control the project's dev server. */
   preview: {
@@ -105,6 +142,8 @@ export interface HelmApi {
     onPreviewUpdate(cb: (p: PreviewUpdatePush) => void): () => void
     onPinsUpdate(cb: (p: PinsUpdatePush) => void): () => void
     onPointCapture(cb: (p: PointCapturePush) => void): () => void
+    /** Phase 4: the shelf changed (user add, agent triage, or promote). */
+    onShelfUpdate(cb: (p: ShelfUpdatePush) => void): () => void
   }
   /** Phase 4 history tabs: decisions log, progress timeline, docs. */
   history: {

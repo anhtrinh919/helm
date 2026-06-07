@@ -29,6 +29,20 @@ interface WizardState {
   setName: (name: string) => void
   retry: () => Promise<void>
   reset: () => void
+  /** Phase 4: rehydrate this project's in-flight wizard (Q&A survives view switches). */
+  restore: (projectId: string) => Promise<void>
+}
+
+/** The persisted snapshot — everything needed to put the wizard back on screen. */
+interface WizardSnapshot {
+  idea: string
+  sessionId: string | null
+  step: WizardStep
+  question: DecisionPrompt | null
+  qStep: number
+  qTotal: number
+  plan: PlanBlock[] | null
+  name: string
 }
 
 const BLANK = {
@@ -41,6 +55,24 @@ const BLANK = {
 }
 
 export const useWizard = create<WizardState>((set, get) => {
+  // Fire-and-forget save of the current wizard snapshot to the project row, so
+  // switching projects (or relaunching) never loses the Q&A in progress.
+  const persist = (): void => {
+    const s = get()
+    if (!s.projectId) return
+    const snap: WizardSnapshot = {
+      idea: s.idea,
+      sessionId: s.sessionId,
+      step: s.step === 'approving' ? 'plan_review' : s.step,
+      question: s.question,
+      qStep: s.qStep,
+      qTotal: s.qTotal,
+      plan: s.plan,
+      name: s.name,
+    }
+    void helm.wizard.saveState(s.projectId, JSON.stringify(snap))
+  }
+
   const apply = (res: WizardScopingResponse): void => {
     if (res.kind === 'question') {
       set({
@@ -53,6 +85,7 @@ export const useWizard = create<WizardState>((set, get) => {
     } else {
       set({ step: 'plan_review', sessionId: res.sessionId, plan: res.plan, name: res.name })
     }
+    persist()
   }
 
   return {
@@ -109,8 +142,26 @@ export const useWizard = create<WizardState>((set, get) => {
       get().reset()
     },
 
-    editPlan: (plan) => set({ plan }),
-    setName: (name) => set({ name }),
+    editPlan: (plan) => {
+      set({ plan })
+      persist()
+    },
+    setName: (name) => {
+      set({ name })
+      persist()
+    },
+
+    restore: async (projectId) => {
+      if (get().projectId === projectId) return // already live in memory
+      const res = await helm.wizard.getState(projectId)
+      if (isIpcError(res) || !res.state) return
+      try {
+        const snap = JSON.parse(res.state) as WizardSnapshot
+        set({ projectId, ...snap })
+      } catch {
+        /* corrupt snapshot — start clean rather than crash the wizard */
+      }
+    },
 
     retry: async () => {
       const idea = get().idea

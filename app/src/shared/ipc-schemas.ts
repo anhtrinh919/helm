@@ -17,6 +17,7 @@ export const FeedEventKind = z.enum([
   'summary',
   'error',
   'stopped',
+  'parked',
 ])
 export type FeedEventKind = z.infer<typeof FeedEventKind>
 
@@ -25,6 +26,10 @@ export type SteerMode = z.infer<typeof SteerMode>
 
 export const ProjectStatus = z.enum(['planning', 'building', 'done'])
 export type ProjectStatus = z.infer<typeof ProjectStatus>
+
+/** Phase 4: every project is explicitly in Build (goal-driven rail) or Iterate (freeform board) mode. */
+export const ProjectMode = z.enum(['build', 'iterate'])
+export type ProjectMode = z.infer<typeof ProjectMode>
 
 export const BackgroundStatus = z.enum(['idle', 'active', 'needs_you', 'failed'])
 export type BackgroundStatus = z.infer<typeof BackgroundStatus>
@@ -107,8 +112,26 @@ export const Project = z.object({
   /** Absolute path to the project's on-disk working dir. Internal only —
    *  never displayed to the user. Null until the first real build session. */
   artifactDir: z.string().nullable(),
+  /** Phase 4: Build (rail) or Iterate (board). */
+  mode: ProjectMode,
+  /** 0-based index of the current rail step. Null in iterate mode. */
+  railStep: z.number().nullable(),
+  /** True once the celebration has run and the project transitioned to Iterate. */
+  railComplete: z.boolean(),
+  /** Absolute path of the imported app's folder (null for Helm-native projects). Internal only. */
+  importFolder: z.string().nullable(),
 })
 export type Project = z.infer<typeof Project>
+
+/** A parked mid-rail request on the "For later" shelf (Phase 4). */
+export const ShelfItem = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  title: z.string(),
+  source: z.string(),
+  createdAt: z.number(),
+})
+export type ShelfItem = z.infer<typeof ShelfItem>
 
 export const Card = z.object({
   id: z.string(),
@@ -273,6 +296,8 @@ export const GetFeedRequest = z.object({ sessionId: z.string(), afterId: z.strin
 export const StartScopingRequest = z.object({
   projectId: z.string(),
   idea: z.string().min(1).max(2000),
+  /** Phase 4: 'iterate' scopes to ONE combined scaffold+first-feature step. Default 'build'. */
+  mode: ProjectMode.optional(),
 })
 export const AnswerScopingRequest = z.object({
   sessionId: z.string(),
@@ -443,6 +468,54 @@ export const GetDecisionsRequest = z.object({ projectId: z.string() })
 export const GetProgressRequest = z.object({ projectId: z.string() })
 export const GetDocsRequest = z.object({ projectId: z.string() })
 
+/* --------------------------- Phase 4: modes, shelf, import, project management --------------------------- */
+
+export const SetModeRequest = z.object({ projectId: z.string(), mode: ProjectMode })
+export const SetRailStepRequest = z.object({ projectId: z.string(), step: z.number().int().min(0) })
+export const RenameProjectRequest = z.object({
+  projectId: z.string(),
+  name: z.string().min(1).max(200),
+})
+export const DeleteProjectRequest = z.object({ projectId: z.string() })
+
+export const ShelfListRequest = z.object({ projectId: z.string() })
+export const ShelfAddRequest = z.object({
+  projectId: z.string(),
+  title: z.string().min(1).max(300),
+})
+export const ShelfPromoteRequest = z.object({ itemId: z.string(), projectId: z.string() })
+
+export const ImportScanRequest = z.object({ folderPath: z.string().min(1) })
+export const ImportScanResponse = z.discriminatedUnion('found', [
+  z.object({
+    found: z.literal(true),
+    startCommand: z.string(),
+    port: z.number(),
+    confidence: z.enum(['high', 'low']),
+  }),
+  z.object({ found: z.literal(false) }),
+])
+export type ImportScanResponse = z.infer<typeof ImportScanResponse>
+
+export const ImportStartRequest = z.object({
+  projectId: z.string(),
+  folderPath: z.string().min(1),
+  startCommand: z.string().min(1).max(500),
+  port: z.number().int().min(1).max(65535),
+})
+
+export const StopSessionRequest = z.object({ sessionId: z.string() })
+
+/** Wizard UI state blob — renderer-shaped, persisted opaquely on the project row. */
+export const SaveWizardStateRequest = z.object({
+  projectId: z.string(),
+  state: z.string().max(50_000).nullable(),
+})
+export const GetWizardStateRequest = z.object({ projectId: z.string() })
+
+export const ShelfUpdatePush = z.object({ projectId: z.string(), items: z.array(ShelfItem) })
+export type ShelfUpdatePush = z.infer<typeof ShelfUpdatePush>
+
 /* --------------------------- channel names --------------------------- */
 
 export const CH = {
@@ -480,6 +553,22 @@ export const CH = {
   historyDecisions: 'history:decisions',
   historyProgress: 'history:progress',
   historyDocs: 'history:docs',
+  // Phase 4: project management
+  projectsRename: 'projects:rename',
+  projectsDelete: 'projects:delete',
+  projectsSetMode: 'projects:set-mode',
+  projectsSetRailStep: 'projects:set-rail-step',
+  // Phase 4: for-later shelf
+  shelfList: 'shelf:list',
+  shelfAdd: 'shelf:add',
+  shelfPromote: 'shelf:promote',
+  // Phase 4: import an existing app
+  importScan: 'import:scan',
+  importStart: 'import:start',
+  // Phase 4: session stop + wizard persistence
+  sessionsStop: 'sessions:stop',
+  wizardSaveState: 'wizard:save-state',
+  wizardGetState: 'wizard:get-state',
   // pushes
   feedEvent: 'feed:event',
   boardUpdate: 'board:update',
@@ -488,4 +577,5 @@ export const CH = {
   previewUpdate: 'preview:update',
   pointsUpdate: 'points:update',
   pointCaptured: 'point:captured',
+  shelfUpdated: 'shelf:updated',
 } as const

@@ -7,6 +7,7 @@ import {
   AnswerDecisionRequest,
   GetQuestionsRequest,
   ReopenQuestionRequest,
+  StopSessionRequest,
   type IpcError,
 } from '../../shared/ipc-schemas'
 import type { Db } from '../db/connection'
@@ -81,6 +82,19 @@ export function registerSessionBridge(db: Db, orchestrator: SessionOrchestrator)
     try {
       const { sessionId, questionId } = ReopenQuestionRequest.parse(raw)
       return { question: orchestrator.reopen(sessionId, questionId) }
+    } catch (e) {
+      return mapError(e)
+    }
+  })
+
+  // Phase 4: explicit user stop (the Stop button).
+  ipcMain.handle(CH.sessionsStop, (_e, raw: unknown) => {
+    try {
+      const { sessionId } = StopSessionRequest.parse(raw)
+      const outcome = orchestrator.stop(sessionId)
+      if (outcome === 'not_found') return { error: 'not_found' }
+      if (outcome === 'not_active') return { error: 'session_not_active' }
+      return { ok: true as const }
     } catch (e) {
       return mapError(e)
     }

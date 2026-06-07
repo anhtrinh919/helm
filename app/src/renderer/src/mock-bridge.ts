@@ -44,6 +44,10 @@ export function createMockBridge(): HelmApi {
     status,
     backgroundStatus,
     artifactDir: null,
+    mode: 'iterate',
+    railStep: null,
+    railComplete: status === 'done',
+    importFolder: null,
   })
 
   const projects: Project[] = [
@@ -330,6 +334,32 @@ export function createMockBridge(): HelmApi {
         cards[p.id] = []
         return { project: p }
       },
+      rename: async (projectId, name) => {
+        const p = projects.find((x) => x.id === projectId)
+        if (!p) return { error: 'not_found' }
+        p.name = name
+        p.updatedAt = Date.now()
+        return { project: p }
+      },
+      delete: async (projectId) => {
+        const idx = projects.findIndex((x) => x.id === projectId)
+        if (idx === -1) return { error: 'not_found' }
+        projects.splice(idx, 1)
+        delete cards[projectId]
+        return { ok: true as const }
+      },
+      setMode: async (projectId, mode) => {
+        const p = projects.find((x) => x.id === projectId)
+        if (!p) return { error: 'not_found' }
+        p.mode = mode
+        return { project: p }
+      },
+      setRailStep: async (projectId, step) => {
+        const p = projects.find((x) => x.id === projectId)
+        if (!p) return { error: 'not_found' }
+        p.railStep = step
+        return { project: p }
+      },
       get: async (projectId) => {
         const project = projects.find((p) => p.id === projectId)
         if (!project) return { error: 'not_found' }
@@ -492,6 +522,25 @@ export function createMockBridge(): HelmApi {
         }
         return { question: q }
       },
+      stop: async (sessionId) => {
+        const c = sessionCard[sessionId]
+        if (!c) return { error: 'not_found' }
+        c.status = 'up_next'
+        pushBoard(c)
+        emitFeed(sessionId, 'stopped', 'You stopped this build — your place is saved.')
+        return { ok: true as const }
+      },
+    },
+    // Phase 4 surfaces — the web mock is retired as a dogfood vehicle; these are
+    // honest no-data stubs that keep the browser build compiling, nothing more.
+    shelf: {
+      list: async () => ({ items: [] }),
+      add: async () => ({ error: 'mock_unsupported' }),
+      promote: async () => ({ error: 'mock_unsupported' }),
+    },
+    import: {
+      scan: async () => ({ found: false as const }),
+      start: async () => ({ error: 'mock_unsupported' }),
     },
     wizard: {
       startScoping: async (_projectId, idea) => {
@@ -535,6 +584,8 @@ export function createMockBridge(): HelmApi {
         seeded.forEach((c) => pushBoard(c))
         return { project, cards: seeded }
       },
+      saveState: async () => ({ ok: true as const }),
+      getState: async () => ({ state: null }),
     },
     preview: {
       getState: async (projectId) => ({ state: previewStates[projectId] ?? { status: 'none' } }),
@@ -638,6 +689,7 @@ export function createMockBridge(): HelmApi {
         pointCaptureListeners.add(cb)
         return () => pointCaptureListeners.delete(cb)
       },
+      onShelfUpdate: () => () => {},
     },
     history: {
       decisions: async (projectId) => {

@@ -5,13 +5,21 @@ import {
   StartScopingRequest,
   AnswerScopingRequest,
   ApprovePlanRequest,
+  SaveWizardStateRequest,
+  GetWizardStateRequest,
   type Card,
   type IpcError,
   type WizardScopingResponse,
 } from '../../shared/ipc-schemas'
 import type { Db } from '../db/connection'
 import { NotFoundError } from '../db/errors'
-import { updateProject } from '../db/projects'
+import {
+  getProject,
+  getWizardState,
+  setRailStep,
+  setWizardState,
+  updateProject,
+} from '../db/projects'
 import { seedCardsFromPlan } from '../db/cards'
 import { SdkInitError } from '../sdk/session-runner'
 import {
@@ -46,8 +54,8 @@ export function registerWizardBridge(
 ): void {
   ipcMain.handle(CH.wizardStartScoping, async (_e, raw: unknown) => {
     try {
-      const { projectId, idea } = StartScopingRequest.parse(raw)
-      const { sessionId, reply, asked } = await wizard.startScoping(projectId, idea)
+      const { projectId, idea, mode } = StartScopingRequest.parse(raw)
+      const { sessionId, reply, asked } = await wizard.startScoping(projectId, idea, mode)
       return toResponse(sessionId, reply, asked)
     } catch (e) {
       return mapError(e)
@@ -67,8 +75,12 @@ export function registerWizardBridge(
   ipcMain.handle(CH.wizardApprove, (_e, raw: unknown) => {
     try {
       const { projectId, name, plan } = ApprovePlanRequest.parse(raw)
-      const project = updateProject(db, projectId, { name, plan, status: 'building' })
+      let project = updateProject(db, projectId, { name, plan, status: 'building' })
       const cards = seedCardsFromPlan(db, projectId, plan)
+      // Build mode starts at the top of the rail; Iterate has no rail cursor.
+      if (project.mode === 'build') project = setRailStep(db, projectId, 0)
+      // The wizard is done — clear any persisted mid-wizard UI state.
+      setWizardState(db, projectId, null)
       const win = getWindow()
       if (win && !win.isDestroyed()) {
         for (const card of cards) {
@@ -80,6 +92,28 @@ export function registerWizardBridge(
         }
       }
       return { project, cards }
+    } catch (e) {
+      return mapError(e)
+    }
+  })
+
+  // Phase 4: the wizard's renderer UI state survives view switches and relaunches.
+  // The blob is renderer-shaped and opaque to main — stored as-is on the project row.
+  ipcMain.handle(CH.wizardSaveState, (_e, raw: unknown) => {
+    try {
+      const { projectId, state } = SaveWizardStateRequest.parse(raw)
+      setWizardState(db, projectId, state)
+      return { ok: true as const }
+    } catch (e) {
+      return mapError(e)
+    }
+  })
+
+  ipcMain.handle(CH.wizardGetState, (_e, raw: unknown) => {
+    try {
+      const { projectId } = GetWizardStateRequest.parse(raw)
+      getProject(db, projectId) // not_found guard
+      return { state: getWizardState(db, projectId) }
     } catch (e) {
       return mapError(e)
     }

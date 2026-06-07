@@ -3,7 +3,8 @@ import type { BrowserWindow } from 'electron'
 import type { Card, FeedEvent, Session, SteerMode } from '../../shared/ipc-schemas'
 import { CH } from '../../shared/ipc-schemas'
 import type { Db } from '../db/connection'
-import { deriveBackgroundStatus } from '../db/projects'
+import { deriveBackgroundStatus, getProject } from '../db/projects'
+import { addShelfItem, listShelfItems } from '../db/shelf'
 import { completeBuildStep, createBuildStep, failBuildStep } from '../db/build-steps'
 import type { DevServerManager } from './dev-server-manager'
 import {
@@ -107,8 +108,9 @@ export class SessionOrchestrator {
 
   /** A short, plain-language instruction for the engine.
    *  `real` = the Phase 2 pipeline (writes a real app + a helm.json manifest);
-   *  otherwise the Phase 1 narration-only proof. */
-  private buildPrompt(card: Card, real: boolean): string {
+   *  otherwise the Phase 1 narration-only proof.
+   *  `triage` (Phase 4, Build-mode rail) adds the park-to-shelf rule. */
+  private buildPrompt(card: Card, real: boolean, triage = false): string {
     const what = card.stepLabel ? card.stepLabel.replace(/^Step \d+ of \d+:\s*/, '') : card.title
     const shared = [
       `Narrate your progress in short, friendly, plain-English lines — one sentence per step,`,
@@ -120,6 +122,15 @@ export class SessionOrchestrator {
       `{"decision":{"question":"<plain-English question>","options":["<choice>","<choice>"]}}.`,
       `Only omit "options" when the answer truly needs their own words. Nothing else on that line.`,
     ]
+    if (triage) {
+      shared.push(
+        `They are mid-journey on a fixed build plan. If they send a request that is SMALL and fits`,
+        `the piece you are building, just do it. If it is LARGE, unrelated, or would expand this`,
+        `piece's scope, do NOT build it — emit exactly one JSON object on its own line:`,
+        `{"park":{"title":"<their request, shortened to a card title>"}} and carry on with the`,
+        `current piece. Tell them in one friendly line that it's saved for later.`,
+      )
+    }
     if (!real) {
       return [
         `You are building one piece of a software product for a non-technical person: "${what}".`,
@@ -328,9 +339,19 @@ export class SessionOrchestrator {
       this.devServer.markBuilding(projectId)
     }
 
+    // Build-mode rail sessions get the triage rule: small fits-the-step requests
+    // are done inline, large/unrelated ones are parked on the For-later shelf.
+    let triage = false
+    try {
+      const project = getProject(this.db, projectId)
+      triage = project.mode === 'build' && !project.railComplete
+    } catch {
+      /* project gone — narration-only fallback */
+    }
+
     const handle = this.runner(
       {
-        prompt: this.buildPrompt(card, real),
+        prompt: this.buildPrompt(card, real, triage),
         cwd,
         permissionMode: real ? 'bypassPermissions' : 'default',
         allowedTools,
@@ -363,6 +384,17 @@ export class SessionOrchestrator {
       this.pause(sessionId, projectId, cardId, ev.text, ev.options)
       return
     }
+    // Phase 4 triage: the agent parked a request — record it and refresh the shelf.
+    if (ev.kind === 'parked') {
+      try {
+        addShelfItem(this.db, projectId, ev.text, 'agent_triage')
+        this.send(CH.shelfUpdated, { projectId, items: listShelfItems(this.db, projectId) })
+      } catch {
+        /* project gone mid-session — drop the park, keep the feed alive */
+      }
+      this.emit(makeFeedEvent(sessionId, 'parked', `Saved for later: ${ev.text}`), rawPayload)
+      return
+    }
     this.emit(ev, rawPayload)
   }
 
@@ -389,6 +421,38 @@ export class SessionOrchestrator {
       /* card may already be in a terminal-ish state */
     }
     this.pushBackground(projectId)
+  }
+
+  /**
+   * Phase 4: an explicit user stop (the Stop button — distinct from steering).
+   * Live engine: mark interrupted and close the handle; the close callback runs
+   * the clean halt. Orphaned session (no handle, e.g. after relaunch): finalize
+   * directly so the status stops lying about being live.
+   */
+  stop(sessionId: string): 'ok' | 'not_found' | 'not_active' {
+    let session: Session
+    try {
+      session = getSession(this.db, sessionId)
+    } catch {
+      return 'not_found'
+    }
+    if (session.status !== 'active' && session.status !== 'paused_for_decision') {
+      return 'not_active'
+    }
+    this.interrupted.add(sessionId)
+    const handle = this.handles.get(sessionId)
+    if (handle) {
+      void handle.close()
+      return 'ok'
+    }
+    if (session.cardId) {
+      this.halt(sessionId, session.projectId, session.cardId)
+    } else {
+      this.interrupted.delete(sessionId)
+      updateSessionStatus(this.db, sessionId, 'stopped')
+      this.pushBackground(session.projectId)
+    }
+    return 'ok'
   }
 
   /** Steer a running session. Returns false if the session isn't live.

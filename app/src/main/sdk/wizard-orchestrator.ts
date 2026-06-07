@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { DecisionPrompt, PlanBlock } from '../../shared/ipc-schemas'
+import type { DecisionPrompt, PlanBlock, ProjectMode } from '../../shared/ipc-schemas'
 import type { Db } from '../db/connection'
 import { NotFoundError } from '../db/errors'
 import { createSession, updateSessionStatus } from '../db/sessions'
@@ -31,7 +31,20 @@ export type ScopingReply =
 
 type Runner = (opts: StartSessionOptions, cb: SessionCallbacks) => SessionHandle
 
-function scopingPrompt(idea: string): string {
+function scopingPrompt(idea: string, mode: ProjectMode = 'build'): string {
+  if (mode === 'iterate') {
+    // Iterate-from-scratch: the FIRST feature and the app scaffold are ONE step —
+    // the user is never parked on an empty canvas. Plan has exactly one block.
+    return [
+      `A non-technical person wants to start iterating on a brand-new app. Their first feature request: "${idea}".`,
+      `You are scoping JUST this first piece — not a full product plan. Ask up to 2 short, high-leverage questions, ONE per turn.`,
+      `Reply with ONLY a single JSON object — no prose, no code fences.`,
+      `PREFER buttons so they can just tap an answer: {"ask":{"question":"...","type":"buttons","options":["..",".."]}} (2-4 short, concrete options).`,
+      `Only use {"ask":{"question":"...","type":"freetext"}} when the answer genuinely needs their own words (e.g. a name).`,
+      `When you have enough, reply: {"plan":{"name":"<short product name, 1-4 words>","steps":[{"title":"<short — the feature itself, not 'set up'>","detail":"<one sentence: scaffold a minimal app AND deliver this feature in one pass>"}]}} with EXACTLY 1 step.`,
+      `Ask your first question now.`,
+    ].join(' ')
+  }
   return [
     `A non-technical person wants to build: "${idea}".`,
     `You are scoping it into a buildable plan. Ask up to ${SCOPING_TOTAL} short, high-leverage questions, ONE per turn.`,
@@ -84,9 +97,21 @@ export function classifyScoping(obj: unknown): ScopingReply | null {
   return null
 }
 
-function defaultPlan(idea: string): ScopingReply {
+function defaultPlan(idea: string, mode: ProjectMode = 'build'): ScopingReply {
   const name = idea.trim().split(/\s+/).slice(0, 3).join(' ') || 'New project'
   const block = (title: string, detail: string): PlanBlock => ({ id: randomUUID(), title, detail })
+  if (mode === 'iterate') {
+    return {
+      kind: 'plan',
+      name,
+      plan: [
+        block(
+          name,
+          'Scaffold a minimal runnable app and deliver this first feature in one pass.',
+        ),
+      ],
+    }
+  }
   return {
     kind: 'plan',
     name,
@@ -105,6 +130,7 @@ const TURN_TIMEOUT_MS = 90_000
 interface WizardSession {
   handle: SessionHandle
   idea: string
+  mode: ProjectMode
   buffer: string
   asked: number
   pending: { resolve: (r: ScopingReply) => void } | null
@@ -123,11 +149,13 @@ export class WizardOrchestrator {
   async startScoping(
     projectId: string,
     idea: string,
+    mode: ProjectMode = 'build',
   ): Promise<{ sessionId: string; reply: ScopingReply; asked: number }> {
     const session = createSession(this.db, projectId, null, 'Scoping')
     const ws: WizardSession = {
       handle: undefined as unknown as SessionHandle,
       idea,
+      mode,
       buffer: '',
       asked: 0,
       pending: null,
@@ -137,7 +165,7 @@ export class WizardOrchestrator {
     this.sessions.set(session.id, ws)
     const next = this.awaitTurn(session.id)
     ws.handle = this.runner(
-      { prompt: scopingPrompt(idea), allowedTools: [], cwd: tmpdir() },
+      { prompt: scopingPrompt(idea, mode), allowedTools: [], cwd: tmpdir() },
       {
         onMessage: (msg) => this.ingest(session.id, msg),
         onError: () => this.degrade(session.id),
@@ -194,13 +222,18 @@ export class WizardOrchestrator {
     if (text) ws.buffer += `\n${text}`
     if (msg.type !== 'result') return
 
-    const parsed = classifyScoping(extractJson(ws.buffer))
+    let parsed = classifyScoping(extractJson(ws.buffer))
     if (parsed) {
+      // Iterate mode contract: exactly one combined scaffold+feature step.
+      if (parsed.kind === 'plan' && ws.mode === 'iterate' && parsed.plan.length > 1) {
+        parsed = { ...parsed, plan: [parsed.plan[0]!] }
+      }
       this.resolve(sessionId, parsed)
       return
     }
     // Unparseable turn: keep the conversation moving rather than dead-end.
-    if (ws.asked >= SCOPING_TOTAL) this.resolve(sessionId, defaultPlan(ws.idea))
+    const cap = ws.mode === 'iterate' ? 2 : SCOPING_TOTAL
+    if (ws.asked >= cap) this.resolve(sessionId, defaultPlan(ws.idea, ws.mode))
     else
       this.resolve(sessionId, {
         kind: 'question',
@@ -214,6 +247,6 @@ export class WizardOrchestrator {
   private degrade(sessionId: string): void {
     const ws = this.sessions.get(sessionId)
     if (!ws || ws.settled || !ws.pending) return
-    this.resolve(sessionId, defaultPlan(ws.idea))
+    this.resolve(sessionId, defaultPlan(ws.idea, ws.mode))
   }
 }

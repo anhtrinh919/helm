@@ -10,6 +10,10 @@ import { registerWizardBridge } from './ipc/wizard-bridge'
 import { registerPreviewBridge } from './ipc/preview-bridge'
 import { registerPointsBridge } from './ipc/points-bridge'
 import { registerHistoryBridge } from './ipc/history-bridge'
+import { registerProjectManagementBridge } from './ipc/project-management-bridge'
+import { registerShelfBridge } from './ipc/shelf-bridge'
+import { registerImportBridge } from './ipc/import-bridge'
+import { mapLegacyProjects } from './db/projects'
 import { SessionOrchestrator } from './sdk/session-orchestrator'
 import { DevServerManager } from './sdk/dev-server-manager'
 import { WizardOrchestrator } from './sdk/wizard-orchestrator'
@@ -48,6 +52,8 @@ void app.whenReady().then(() => {
   // DB + migrations must run before any IPC handler is registered.
   const db: Db = openDatabase(join(app.getPath('userData'), 'helm.db'))
   recoverActiveSessions(db, Date.now())
+  // Phase 4: place pre-modes projects on the right surface (Build rail vs Iterate board).
+  mapLegacyProjects(db)
 
   const getWindow = (): BrowserWindow | null => mainWindow
   const send = (channel: string, payload: unknown): void => {
@@ -81,6 +87,9 @@ void app.whenReady().then(() => {
   registerWizardBridge(db, wizard, getWindow)
   registerPreviewBridge(db, devServer)
   registerHistoryBridge(db)
+  registerProjectManagementBridge(db, devServer)
+  registerShelfBridge(db, getWindow)
+  registerImportBridge(db, devServer)
   registerPointsBridge(db, {
     capture: pointCapture,
     devServer,

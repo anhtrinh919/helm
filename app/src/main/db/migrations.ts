@@ -120,6 +120,25 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_fix_comments_card ON fix_comments(card_id);
     `)
   },
+  // 5 — Phase 4: Build/Iterate modes, rail tracking, for-later shelf, import, wizard persistence
+  (db) => {
+    db.exec(`
+      ALTER TABLE projects ADD COLUMN mode TEXT NOT NULL DEFAULT 'build';
+      ALTER TABLE projects ADD COLUMN rail_step INTEGER;
+      ALTER TABLE projects ADD COLUMN rail_complete INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE projects ADD COLUMN import_folder TEXT;
+      ALTER TABLE projects ADD COLUMN wizard_state TEXT;
+
+      CREATE TABLE shelf_items (
+        id          TEXT PRIMARY KEY,
+        project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        title       TEXT NOT NULL,
+        source      TEXT NOT NULL DEFAULT 'user_triage',
+        created_at  INTEGER NOT NULL
+      );
+      CREATE INDEX idx_shelf_project ON shelf_items(project_id, created_at);
+    `)
+  },
 ]
 
 export function migrate(db: Database.Database): void {

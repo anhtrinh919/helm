@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import type { BackgroundStatus, PlanBlock, Project, ProjectStatus } from '../../shared/ipc-schemas'
+import type {
+  BackgroundStatus,
+  PlanBlock,
+  Project,
+  ProjectMode,
+  ProjectStatus,
+} from '../../shared/ipc-schemas'
 import type { Db } from './connection'
 import { NotFoundError } from './errors'
 import { toProject, type ProjectRow } from './mappers'
@@ -86,6 +92,106 @@ export function listProjectsWithArtifacts(db: Db): { id: string; devPid: number 
     .prepare(`SELECT id, dev_pid FROM projects WHERE artifact_dir IS NOT NULL`)
     .all() as { id: string; dev_pid: number | null }[]
   return rows.map((r) => ({ id: r.id, devPid: r.dev_pid }))
+}
+
+/* --------------------------- Phase 4: modes, rail, management --------------------------- */
+
+export function setProjectMode(db: Db, projectId: string, mode: ProjectMode): Project {
+  const res = db
+    .prepare(`UPDATE projects SET mode = ?, updated_at = ? WHERE id = ?`)
+    .run(mode, Date.now(), projectId)
+  if (res.changes === 0) throw new NotFoundError('project not found')
+  return getProject(db, projectId)
+}
+
+export function setRailStep(db: Db, projectId: string, step: number): Project {
+  const res = db
+    .prepare(`UPDATE projects SET rail_step = ?, updated_at = ? WHERE id = ?`)
+    .run(step, Date.now(), projectId)
+  if (res.changes === 0) throw new NotFoundError('project not found')
+  return getProject(db, projectId)
+}
+
+/** The celebration ran: rail finished, project lives on the Iterate board now. */
+export function markRailComplete(db: Db, projectId: string): Project {
+  const res = db
+    .prepare(`UPDATE projects SET rail_complete = 1, mode = 'iterate', updated_at = ? WHERE id = ?`)
+    .run(Date.now(), projectId)
+  if (res.changes === 0) throw new NotFoundError('project not found')
+  return getProject(db, projectId)
+}
+
+export function renameProject(db: Db, projectId: string, name: string): Project {
+  const res = db
+    .prepare(`UPDATE projects SET name = ?, updated_at = ? WHERE id = ?`)
+    .run(name, Date.now(), projectId)
+  if (res.changes === 0) throw new NotFoundError('project not found')
+  return getProject(db, projectId)
+}
+
+/** Cascades to sessions, cards, feed, questions, build steps, fix comments, shelf items. */
+export function deleteProject(db: Db, projectId: string): void {
+  const res = db.prepare(`DELETE FROM projects WHERE id = ?`).run(projectId)
+  if (res.changes === 0) throw new NotFoundError('project not found')
+}
+
+export function setImportFolder(db: Db, projectId: string, folder: string): void {
+  db.prepare(`UPDATE projects SET import_folder = ?, updated_at = ? WHERE id = ?`).run(
+    folder,
+    Date.now(),
+    projectId,
+  )
+}
+
+/** Opaque renderer-shaped wizard UI blob; null clears it (wizard finished or abandoned). */
+export function setWizardState(db: Db, projectId: string, state: string | null): void {
+  const res = db.prepare(`UPDATE projects SET wizard_state = ? WHERE id = ?`).run(state, projectId)
+  if (res.changes === 0) throw new NotFoundError('project not found')
+}
+
+export function getWizardState(db: Db, projectId: string): string | null {
+  const row = db.prepare(`SELECT wizard_state FROM projects WHERE id = ?`).get(projectId) as
+    | { wizard_state: string | null }
+    | undefined
+  if (!row) throw new NotFoundError('project not found')
+  return row.wizard_state ?? null
+}
+
+/**
+ * One-time mapping of pre-Phase-4 projects into the modes world (runs on every
+ * launch after migrate(); idempotent):
+ *  - finished projects → Iterate (their journey is over, the board is home)
+ *  - in-progress projects → Build, positioned at the first not-done plan step
+ */
+export function mapLegacyProjects(db: Db): void {
+  db.prepare(
+    `UPDATE projects SET mode = 'iterate', rail_complete = 1
+     WHERE status = 'done' AND rail_complete = 0 AND mode = 'build'`,
+  ).run()
+
+  const inProgress = db
+    .prepare(
+      `SELECT id, plan FROM projects
+       WHERE status = 'building' AND mode = 'build' AND rail_step IS NULL AND plan IS NOT NULL`,
+    )
+    .all() as { id: string; plan: string }[]
+  for (const p of inProgress) {
+    let plan: PlanBlock[]
+    try {
+      plan = JSON.parse(p.plan) as PlanBlock[]
+    } catch {
+      continue
+    }
+    if (!Array.isArray(plan) || plan.length === 0) continue
+    const done = db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM cards
+         WHERE project_id = ? AND source = 'plan_seed' AND status = 'done'`,
+      )
+      .get(p.id) as { n: number }
+    const step = Math.min(done.n, plan.length - 1)
+    db.prepare(`UPDATE projects SET rail_step = ? WHERE id = ?`).run(step, p.id)
+  }
 }
 
 export function updateProject(db: Db, id: string, patch: ProjectPatch): Project {

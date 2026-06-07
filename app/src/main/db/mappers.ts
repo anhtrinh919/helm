@@ -21,6 +21,11 @@ export interface ProjectRow {
   status: string
   artifact_dir: string | null
   dev_pid: number | null
+  mode: string
+  rail_step: number | null
+  rail_complete: number
+  import_folder: string | null
+  wizard_state: string | null
 }
 export interface BuildStepRow {
   id: string
@@ -100,7 +105,20 @@ export function toProject(row: ProjectRow, backgroundStatus: BackgroundStatus): 
     status: row.status as Project['status'],
     backgroundStatus,
     artifactDir: row.artifact_dir ?? null,
+    mode: (row.mode === 'iterate' ? 'iterate' : 'build') as Project['mode'],
+    railStep: row.rail_step ?? null,
+    railComplete: !!row.rail_complete,
+    importFolder: row.import_folder ?? null,
   }
+}
+
+/** A parked shelf row (Phase 4 "For later" shelf). */
+export interface ShelfRow {
+  id: string
+  project_id: string
+  title: string
+  source: string
+  created_at: number
 }
 
 export function toBuildStep(row: BuildStepRow): BuildStep {

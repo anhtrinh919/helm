@@ -8,6 +8,20 @@ const api: HelmApi = {
     list: () => ipcRenderer.invoke(CH.projectsList),
     create: (name) => ipcRenderer.invoke(CH.projectsCreate, { name }),
     get: (projectId) => ipcRenderer.invoke(CH.projectsGet, { projectId }),
+    rename: (projectId, name) => ipcRenderer.invoke(CH.projectsRename, { projectId, name }),
+    delete: (projectId) => ipcRenderer.invoke(CH.projectsDelete, { projectId }),
+    setMode: (projectId, mode) => ipcRenderer.invoke(CH.projectsSetMode, { projectId, mode }),
+    setRailStep: (projectId, step) => ipcRenderer.invoke(CH.projectsSetRailStep, { projectId, step }),
+  },
+  shelf: {
+    list: (projectId) => ipcRenderer.invoke(CH.shelfList, { projectId }),
+    add: (projectId, title) => ipcRenderer.invoke(CH.shelfAdd, { projectId, title }),
+    promote: (itemId, projectId) => ipcRenderer.invoke(CH.shelfPromote, { itemId, projectId }),
+  },
+  import: {
+    scan: (folderPath) => ipcRenderer.invoke(CH.importScan, { folderPath }),
+    start: (projectId, folderPath, startCommand, port) =>
+      ipcRenderer.invoke(CH.importStart, { projectId, folderPath, startCommand, port }),
   },
   cards: {
     create: (projectId, type, title) => ipcRenderer.invoke(CH.cardsCreate, { projectId, type, title }),
@@ -23,12 +37,16 @@ const api: HelmApi = {
     getQuestions: (sessionId) => ipcRenderer.invoke(CH.sessionsGetQuestions, { sessionId }),
     reopenQuestion: (sessionId, questionId) =>
       ipcRenderer.invoke(CH.sessionsReopenQuestion, { sessionId, questionId }),
+    stop: (sessionId) => ipcRenderer.invoke(CH.sessionsStop, { sessionId }),
   },
   wizard: {
-    startScoping: (projectId, idea) => ipcRenderer.invoke(CH.wizardStartScoping, { projectId, idea }),
+    startScoping: (projectId, idea, mode) =>
+      ipcRenderer.invoke(CH.wizardStartScoping, { projectId, idea, mode }),
     answerScoping: (sessionId, answer) => ipcRenderer.invoke(CH.wizardAnswer, { sessionId, answer }),
     approvePlan: (projectId, name, plan) =>
       ipcRenderer.invoke(CH.wizardApprove, { projectId, name, plan }),
+    saveState: (projectId, state) => ipcRenderer.invoke(CH.wizardSaveState, { projectId, state }),
+    getState: (projectId) => ipcRenderer.invoke(CH.wizardGetState, { projectId }),
   },
   preview: {
     getState: (projectId) => ipcRenderer.invoke(CH.previewGetState, { projectId }),
@@ -57,6 +75,7 @@ const api: HelmApi = {
     onPreviewUpdate: (cb) => subscribe(CH.previewUpdate, cb),
     onPinsUpdate: (cb) => subscribe(CH.pointsUpdate, cb),
     onPointCapture: (cb) => subscribe(CH.pointCaptured, cb),
+    onShelfUpdate: (cb) => subscribe(CH.shelfUpdated, cb),
   },
   startProbe: (prompt) => ipcRenderer.invoke(CH.startProbe, { prompt }),
   getFeed: (sessionId) => ipcRenderer.invoke(CH.getFeed, { sessionId }),

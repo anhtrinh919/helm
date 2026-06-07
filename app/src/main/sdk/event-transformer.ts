@@ -106,6 +106,7 @@ function splitTurn(text: string): {
   narration: string | null
   question: string | null
   options: string[]
+  parks: string[]
 } {
   // Decision objects come from the raw turn (splitJson strips fences to find
   // them). Narration is built from a code-scrubbed copy, then JSON-stripped.
@@ -113,6 +114,7 @@ function splitTurn(text: string): {
   const prose = splitJson(stripCode(text)).prose
   let question: string | null = null
   let options: string[] = []
+  const parks: string[] = []
   for (const obj of objects) {
     if (!obj || typeof obj !== 'object') continue
     const d = (obj as Record<string, unknown>).decision
@@ -126,8 +128,15 @@ function splitTurn(text: string): {
           : []
       }
     }
+    // Phase 4 triage: {"park":{"title":"..."}} — the agent parks a large or
+    // unrelated mid-rail request on the "For later" shelf instead of building it.
+    const p = (obj as Record<string, unknown>).park
+    if (p && typeof p === 'object') {
+      const title = (p as Record<string, unknown>).title
+      if (typeof title === 'string' && title.trim()) parks.push(title.trim().slice(0, 300))
+    }
   }
-  return { narration: prose ? prose : null, question, options }
+  return { narration: prose ? prose : null, question, options, parks }
 }
 
 type Block = { type: string; text?: string; name?: string }
@@ -141,13 +150,14 @@ export function transform(sessionId: string, msg: SDKMessage): FeedEvent[] {
       if (Array.isArray(content)) {
         for (const raw of content as Block[]) {
           if (raw.type === 'text' && typeof raw.text === 'string' && raw.text.trim()) {
-            const { narration, question, options } = splitTurn(raw.text)
+            const { narration, question, options, parks } = splitTurn(raw.text)
             if (narration) out.push(makeFeedEvent(sessionId, 'narration', narration))
             if (question) {
               const ev = makeFeedEvent(sessionId, 'decision_prompt', question)
               if (options.length) ev.options = options
               out.push(ev)
             }
+            for (const title of parks) out.push(makeFeedEvent(sessionId, 'parked', title))
           } else if (raw.type === 'tool_use') {
             out.push(makeFeedEvent(sessionId, 'activity', TOOL_LABELS[raw.name ?? ''] ?? 'Working on it'))
           }

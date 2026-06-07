@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useWizard } from '../../store/wizard'
 import { useProjects } from '../../store/projects'
 import { Confetti } from '../Confetti'
@@ -7,6 +8,11 @@ import { PlanReview } from './PlanReview'
 
 /** The new-project wizard shell (F3–F8): scoping → plan review → approving. */
 export function WizardScreen({ projectId }: { projectId: string }): React.JSX.Element {
+  // Phase 4: coming back to a project's wizard rehydrates its persisted Q&A state.
+  useEffect(() => {
+    void useWizard.getState().restore(projectId)
+  }, [projectId])
+
   const step = useWizard((s) => s.step)
   const question = useWizard((s) => s.question)
   const qStep = useWizard((s) => s.qStep)

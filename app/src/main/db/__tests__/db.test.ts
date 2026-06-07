@@ -11,7 +11,16 @@ import {
   setDevPid,
   getDevPid,
   listProjectsWithArtifacts,
+  setProjectMode,
+  setRailStep,
+  markRailComplete,
+  renameProject,
+  deleteProject,
+  setWizardState,
+  getWizardState,
+  mapLegacyProjects,
 } from '../projects'
+import { addShelfItem, listShelfItems, promoteShelfItem } from '../shelf'
 import {
   createBuildStep,
   completeBuildStep,
@@ -199,7 +208,7 @@ describe('migration 3 — artifact tracking + build steps', () => {
     const cols = db.prepare(`PRAGMA table_info(projects)`).all().map((r) => (r as { name: string }).name)
     expect(cols).toContain('artifact_dir')
     expect(cols).toContain('dev_pid')
-    expect(db.pragma('user_version', { simple: true })).toBe(4)
+    expect(db.pragma('user_version', { simple: true })).toBe(5)
   })
 
   it('artifact_dir is null on a fresh project and round-trips once set', () => {
@@ -373,5 +382,93 @@ describe('fix comments (Phase 3, migration 4)', () => {
     const card = createCard(db, p.id, 'feature', 'Sign-in')
     expect(card.status).toBe('planned')
     expect(() => updateCardStatus(db, card.id, 'waiting')).toThrow(InvalidTransitionError)
+  })
+})
+
+describe('migration 5 — Build/Iterate modes, rail, shelf (Phase 4)', () => {
+  it('fresh projects default to Build mode with no rail position', () => {
+    const p = createProject(db, 'Modes')
+    expect(p.mode).toBe('build')
+    expect(p.railStep).toBeNull()
+    expect(p.railComplete).toBe(false)
+    expect(p.importFolder).toBeNull()
+  })
+
+  it('mode, rail step, and rail-complete round-trip', () => {
+    const p = createProject(db, 'Rail')
+    expect(setRailStep(db, p.id, 2).railStep).toBe(2)
+    expect(setProjectMode(db, p.id, 'iterate').mode).toBe('iterate')
+    const done = markRailComplete(db, p.id)
+    expect(done.railComplete).toBe(true)
+    expect(done.mode).toBe('iterate')
+  })
+
+  it('rename and delete: rename persists; delete cascades sessions and cards', () => {
+    const p = createProject(db, 'Old name')
+    expect(renameProject(db, p.id, 'New name').name).toBe('New name')
+    const card = createCard(db, p.id, 'feature', 'X')
+    const s = createSession(db, p.id, card.id, 'Build')
+    deleteProject(db, p.id)
+    expect(() => getProject(db, p.id)).toThrow(NotFoundError)
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM cards WHERE id = ?`).get(card.id)).toEqual({ n: 0 })
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM sessions WHERE id = ?`).get(s.id)).toEqual({ n: 0 })
+  })
+
+  it('shelf: add → list (newest first) → promote creates a card and empties the shelf', () => {
+    const p = createProject(db, 'Shelf')
+    addShelfItem(db, p.id, 'Dark mode', 'agent_triage')
+    const b = addShelfItem(db, p.id, 'CSV export')
+    expect(listShelfItems(db, p.id).map((i) => i.title)).toEqual(['CSV export', 'Dark mode'])
+    const card = promoteShelfItem(db, b.id, p.id)
+    expect(card.title).toBe('CSV export')
+    expect(card.status).toBe('planned')
+    expect(listShelfItems(db, p.id).map((i) => i.title)).toEqual(['Dark mode'])
+  })
+
+  it('shelf items cascade-delete with their project', () => {
+    const p = createProject(db, 'ShelfCascade')
+    addShelfItem(db, p.id, 'Park me')
+    deleteProject(db, p.id)
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM shelf_items`).get()).toEqual({ n: 0 })
+  })
+
+  it('wizard state round-trips and clears', () => {
+    const p = createProject(db, 'Wiz')
+    expect(getWizardState(db, p.id)).toBeNull()
+    setWizardState(db, p.id, '{"step":"scoping"}')
+    expect(getWizardState(db, p.id)).toBe('{"step":"scoping"}')
+    setWizardState(db, p.id, null)
+    expect(getWizardState(db, p.id)).toBeNull()
+  })
+
+  it('mapLegacyProjects: done projects move to Iterate; in-progress land on the right rail step', () => {
+    const done = createProject(db, 'Done legacy')
+    updateProject(db, done.id, { status: 'building' })
+    updateProject(db, done.id, { status: 'done' })
+
+    const wip = createProject(db, 'WIP legacy')
+    const plan = [
+      { id: 'a', title: 'One' },
+      { id: 'b', title: 'Two' },
+      { id: 'c', title: 'Three' },
+    ]
+    updateProject(db, wip.id, { plan, status: 'building' })
+    const cards = seedCardsFromPlan(db, wip.id, plan)
+    updateCardStatus(db, cards[0]!.id, 'up_next')
+    updateCardStatus(db, cards[0]!.id, 'building')
+    updateCardStatus(db, cards[0]!.id, 'done')
+
+    mapLegacyProjects(db)
+
+    const d = getProject(db, done.id)
+    expect(d.mode).toBe('iterate')
+    expect(d.railComplete).toBe(true)
+    const w = getProject(db, wip.id)
+    expect(w.mode).toBe('build')
+    expect(w.railStep).toBe(1) // first not-done step
+
+    // Idempotent: a second run changes nothing.
+    mapLegacyProjects(db)
+    expect(getProject(db, wip.id).railStep).toBe(1)
   })
 })
