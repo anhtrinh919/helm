@@ -1,9 +1,9 @@
 {
-  "phase": 3,
-  "feature": "point-and-fix",
-  "step": "phase-complete",
+  "phase": 4,
+  "feature": "build-and-iterate",
+  "step": "spec-complete",
   "reviewIteration": 0,
-  "requirementsHash": "78062aa4c02a56d1e500b63c800895c797061b0706b5a3f7049346c6a4831850",
+  "requirementsHash": "2be25be1cc48f7133d25de465b7bbb7ba8d54d6dd234d92240b55726e51c0b83",
   "currentSubStep": null,
   "dogfoodPid": null
 }
