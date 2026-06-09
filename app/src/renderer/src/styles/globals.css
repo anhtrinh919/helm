@@ -1,6 +1,13 @@
 @import 'tailwindcss';
 
-/* v4 "Maximalist" canon — mirrors pencil/v0.1.pen variables. */
+/* Phase 1 "DOT-MATRIX" design canon — the complete .hm- class system + its
+ * :root tokens (--bg, --ink, --lime, --display, --sans, …). Ported verbatim from
+ * the Claude Design handover; new screens use these classes, legacy screens are
+ * reskinned group by group until the sweep (Group 13) retires the @theme below. */
+@import './helm.css';
+
+/* v4 "Maximalist" canon — mirrors pencil/v0.1.pen variables.
+ * Retained only for not-yet-reskinned legacy screens; removed in the Group 13 sweep. */
 @theme {
   --color-canvas: #ffefd2;
   --color-surface: #fff7e6;
@@ -33,9 +40,9 @@ body,
 }
 
 body {
-  background-color: var(--color-canvas);
-  color: var(--color-ink);
-  font-family: var(--font-ui);
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
   -webkit-font-smoothing: antialiased;
   margin: 0;
   overflow: hidden;

@@ -1,19 +1,175 @@
 import { useEffect } from 'react'
 import { useWizard } from '../../store/wizard'
 import { useProjects } from '../../store/projects'
-import { Confetti } from '../Confetti'
-import { Rail } from '../Rail'
 import { ScopingQA } from './ScopingQA'
 import { PlanReview } from './PlanReview'
+import { Icon } from '../ui/Icon'
+import { ClaudeSignal } from '../ui/ClaudeSignal'
 
-/** The new-project wizard shell (F3–F8): scoping → plan review → approving. */
+function Mark(): React.JSX.Element {
+  return <span className="hm-mark">H</span>
+}
+
+/** The wizard shell: top bar + centred content column. */
+function WizardShell({ children }: { children: React.ReactNode }): React.JSX.Element {
+  const backToFront = (): void => useProjects.getState().newBuild()
+  return (
+    <div className="hm hm-guide">
+      <div className="hm-guide-top">
+        <div className="hm-top__back" style={{ background: '#fff' }} onClick={backToFront} role="button" tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') backToFront() }}>
+          <Icon n="arrow-left" />
+        </div>
+        <Mark />
+        <span className="hm-wordmark">Helm</span>
+        <span className="hm-chip" style={{ marginLeft: 6 }}>
+          <Icon n="compass-tool" />New project
+        </span>
+        <div style={{ marginLeft: 'auto' }}><ClaudeSignal inline /></div>
+      </div>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 40px' }}>
+        <div style={{ width: '100%', maxWidth: 680 }}>{children}</div>
+      </div>
+    </div>
+  )
+}
+
+/** Pinned banner showing the user's goal during Q&A and plan review. */
+function GoalPin({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '8px 14px', background: 'var(--surface-3)', border: '1px solid var(--line)', boxShadow: 'var(--sh1)', marginBottom: 24 }}>
+      <Icon n="target" size={16} />
+      <span style={{ fontSize: 13.5, color: 'var(--ink-2)' }}>
+        Building:&nbsp;<b style={{ color: 'var(--ink)', fontWeight: 600 }}>{children}</b>
+      </span>
+    </div>
+  )
+}
+
+/** Idea input step — the entry point of the wizard. */
+function IdeaStep(): React.JSX.Element {
+  const begin = useWizard((s) => s.begin)
+
+  const handleSubmit = (form: React.FormEvent<HTMLFormElement>): void => {
+    form.preventDefault()
+    const data = new FormData(form.currentTarget)
+    const idea = (data.get('idea') as string | null)?.trim() ?? ''
+    if (idea) void begin(idea)
+  }
+
+  return (
+    <WizardShell>
+      <span className="hm-eyebrow">Step one · the idea</span>
+      <div className="hm-display hm-h-l" style={{ marginTop: 14, marginBottom: 12 }}>What do you want to build?</div>
+      <div style={{ fontSize: 16, color: 'var(--ink-2)', marginBottom: 22, lineHeight: 1.5 }}>
+        One plain sentence is enough. No jargon, no features list — just the idea. Helm will ask the rest.
+      </div>
+      <form onSubmit={handleSubmit}>
+        <textarea
+          name="idea"
+          className="hm-input hm-input--lg"
+          rows={3}
+          placeholder="A sign-up page for my neighbourhood book club, where people can reserve a seat at the next meet."
+          autoFocus
+        />
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 16 }}>
+          <span style={{ fontSize: 13, color: 'var(--ink-3)', alignSelf: 'center' }}>Try:</span>
+          {['a booking page for my studio', 'a simple online shop', 'a club sign-up'].map((s) => (
+            <span key={s} className="hm-chip" style={{ cursor: 'pointer' }}>{s}</span>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', marginTop: 30 }}>
+          <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>Helm will ask a few quick questions next.</span>
+          <button type="submit" className="hm-btn hm-btn--primary hm-btn--lg" style={{ marginLeft: 'auto' }}>
+            Continue <Icon n="arrow-right" />
+          </button>
+        </div>
+      </form>
+    </WizardShell>
+  )
+}
+
+/** Thinking state — Claude is generating the next question. */
+function ThinkingStep({ idea }: { idea: string }): React.JSX.Element {
+  return (
+    <WizardShell>
+      <GoalPin>{idea || 'Your idea'}</GoalPin>
+      <div className="hm-panel" style={{ padding: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'var(--ink-2)', fontSize: 15 }}>
+          <span className="hm-claude__spark" style={{ width: 24, height: 24 }}><Icon n="sparkle" /></span>
+          Thinking through your idea&nbsp;
+          <span className="hm-thinking" style={{ marginLeft: 4 }}><i /><i /><i /></span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 22 }}>
+          <div style={{ height: 14, background: 'var(--surface-2)', width: '70%' }} />
+          <div style={{ height: 14, background: 'var(--surface-2)', width: '92%' }} />
+          <div style={{ height: 14, background: 'var(--surface-2)', width: '48%' }} />
+        </div>
+      </div>
+      <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--ink-3)', marginTop: 18 }}>
+        This usually takes a few seconds. You can keep your idea in mind — nothing is locked in yet.
+      </div>
+    </WizardShell>
+  )
+}
+
+/** Approving — plan was submitted, setting up the board. */
+function ApprovingStep(): React.JSX.Element {
+  return (
+    <WizardShell>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'var(--ink-2)', fontSize: 15, justifyContent: 'center' }}>
+          <span className="hm-claude__spark" style={{ width: 24, height: 24 }}><Icon n="sparkle" /></span>
+          Setting up your board&nbsp;
+          <span className="hm-thinking"><i /><i /><i /></span>
+        </div>
+        <div style={{ marginTop: 14, fontSize: 13, color: 'var(--ink-3)' }}>
+          Hang tight — this only takes a moment.
+        </div>
+      </div>
+    </WizardShell>
+  )
+}
+
+/** Error step — Claude unreachable or agent failure. */
+function ErrorStep(): React.JSX.Element {
+  const retry = useWizard((s) => s.retry)
+  const reset = useWizard((s) => s.reset)
+  const backToFront = (): void => {
+    reset()
+    useProjects.getState().newBuild()
+  }
+  return (
+    <WizardShell>
+      <div className="hm-callout hm-callout--fail" style={{ marginBottom: 24 }}>
+        <Icon n="warning-circle" size={20} />
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>Helm couldn't reach Claude</div>
+          <div style={{ fontSize: 13.5, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+            Check that your Claude subscription is active and your internet is connected, then try again.
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button className="hm-btn hm-btn--primary" onClick={() => void retry()}>
+          <Icon n="arrow-clockwise" /> Try again
+        </button>
+        <button className="hm-btn" onClick={backToFront}>
+          <Icon n="arrow-left" /> Back to start
+        </button>
+      </div>
+    </WizardShell>
+  )
+}
+
+/** The new-project wizard shell (idea → scoping → plan review → approving). */
 export function WizardScreen({ projectId }: { projectId: string }): React.JSX.Element {
-  // Phase 4: coming back to a project's wizard rehydrates its persisted Q&A state.
   useEffect(() => {
     void useWizard.getState().restore(projectId)
   }, [projectId])
 
   const step = useWizard((s) => s.step)
+  const idea = useWizard((s) => s.idea)
   const question = useWizard((s) => s.question)
   const qStep = useWizard((s) => s.qStep)
   const qTotal = useWizard((s) => s.qTotal)
@@ -24,81 +180,52 @@ export function WizardScreen({ projectId }: { projectId: string }): React.JSX.El
   const editPlan = useWizard((s) => s.editPlan)
   const setName = useWizard((s) => s.setName)
   const retry = useWizard((s) => s.retry)
-  const reset = useWizard((s) => s.reset)
-  const newBuild = useProjects((s) => s.newBuild)
 
-  const headerName = name || useProjects.getState().projects.find((p) => p.id === projectId)?.name || 'New project'
-
-  const backToStart = (): void => {
-    reset()
-    newBuild()
+  if (step === 'idea') {
+    return <IdeaStep />
   }
 
-  return (
-    <div className="relative h-full w-full bg-canvas">
-      <Confetti />
-      <div className="relative mx-auto flex h-full w-full max-w-[1640px] gap-6 p-6">
-        <Rail activeProjectId={projectId} />
+  if (step === 'scoping' && question === null) {
+    return <ThinkingStep idea={idea} />
+  }
 
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="flex items-center gap-2 text-sm font-semibold text-soft">
-            <span className="rounded-full brut-2 bg-lime px-2.5 py-0.5 text-[10px] font-black tracking-wide text-ink">
-              NEW PROJECT
-            </span>
-            <span className="truncate">{headerName}</span>
-          </div>
+  if (step === 'scoping' && question !== null) {
+    return (
+      <WizardShell>
+        <GoalPin>{idea || 'Your idea'}</GoalPin>
+        <ScopingQA
+          question={question}
+          step={qStep}
+          total={qTotal}
+          onAnswer={(a) => void answer(a)}
+        />
+      </WizardShell>
+    )
+  }
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-            {step === 'scoping' && (
-              <ScopingQA question={question} step={qStep} total={qTotal} onAnswer={(a) => void answer(a)} />
-            )}
+  if (step === 'plan_review' && plan !== null) {
+    return (
+      <WizardShell>
+        <PlanReview
+          name={name}
+          plan={plan}
+          onName={setName}
+          onPlan={editPlan}
+          onApprove={() => void approve()}
+          onBack={() => void retry()}
+        />
+      </WizardShell>
+    )
+  }
 
-            {step === 'plan_review' && plan && (
-              <PlanReview
-                name={name}
-                plan={plan}
-                onName={setName}
-                onPlan={editPlan}
-                onApprove={() => void approve()}
-                onBack={() => void retry()}
-              />
-            )}
+  if (step === 'approving') {
+    return <ApprovingStep />
+  }
 
-            {step === 'approving' && (
-              <div className="grid flex-1 place-items-center text-center">
-                <div>
-                  <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-[3px] border-ink/15 border-t-ink" />
-                  <div className="font-display text-2xl font-black text-ink">Getting your plan ready…</div>
-                  <div className="mt-1 text-soft">Hang tight — setting up the board.</div>
-                </div>
-              </div>
-            )}
+  if (step === 'error') {
+    return <ErrorStep />
+  }
 
-            {step === 'error' && (
-              <div className="grid flex-1 place-items-center text-center">
-                <div className="max-w-md rounded-[20px] brut bg-orangesoft p-7">
-                  <div className="font-display text-2xl font-black text-ink">Something broke</div>
-                  <div className="mt-1.5 text-soft">I couldn’t reach the agent. This is on me, not you.</div>
-                  <div className="mt-5 flex justify-center gap-2">
-                    <button
-                      onClick={() => void retry()}
-                      className="rounded-full brut-2 bg-ink px-5 py-2.5 text-sm font-bold text-cream"
-                    >
-                      Try again
-                    </button>
-                    <button
-                      onClick={backToStart}
-                      className="rounded-full brut-2 bg-cream px-5 py-2.5 text-sm font-bold text-ink"
-                    >
-                      Back to start
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </main>
-      </div>
-    </div>
-  )
+  // Fallback — scoping with null question (covers the initial empty-projectId render)
+  return <ThinkingStep idea={idea} />
 }

@@ -1,7 +1,12 @@
 import { useState } from 'react'
 import type { DecisionPrompt } from '@shared/ipc-schemas'
+import { Icon } from '../ui/Icon'
 
-/** One scoping question (F4/F5). Buttons or free text; progress shown as "Step N of M". */
+/**
+ * One scoping question (wizard Q&A step).
+ * "QUESTION N OF M" — deliberately distinct from the Journey's "STEP N OF M".
+ * Uses `.hm-progresslabel--wizard` (ink-3 colour, neutral).
+ */
 export function ScopingQA({
   question,
   step,
@@ -14,72 +19,142 @@ export function ScopingQA({
   onAnswer: (answer: string) => void
 }): React.JSX.Element {
   const [text, setText] = useState('')
+  const [selected, setSelected] = useState<string | null>(null)
 
   if (!question) {
     return (
-      <div className="grid flex-1 place-items-center">
-        <div className="flex items-center gap-2 text-soft">
-          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-violet" /> Thinking about what to ask…
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, color: 'var(--ink-2)', fontSize: 15, padding: '28px 0' }}>
+        <span className="hm-claude__spark" style={{ width: 24, height: 24 }}><Icon n="sparkle" /></span>
+        Thinking up the next question&nbsp;
+        <span className="hm-thinking"><i /><i /><i /></span>
       </div>
     )
   }
 
   const isButtons = question.type === 'buttons' && question.options && question.options.length > 0
+  const n = Math.max(1, step)
+  const m = Math.max(total, step)
+
+  const submit = (value: string): void => {
+    if (!value.trim()) return
+    onAnswer(value.trim())
+  }
 
   return (
-    <div className="mx-auto w-full max-w-[640px] py-8">
-      <div className="text-[11px] font-black tracking-[0.18em] text-soft">
-        STEP {Math.max(1, step)} OF {Math.max(total, step)}: SCOPING
+    <div>
+      {/* Progress indicator — "QUESTION N OF M", visually distinct from journey "STEP N OF M" */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+        <span className="hm-progresslabel hm-progresslabel--wizard">Question {n} of {m}</span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {Array.from({ length: m }).map((_, i) => (
+            <span
+              key={i}
+              style={{
+                width: i + 1 === n ? 22 : 8,
+                height: 8,
+                background: i + 1 < n ? 'var(--ink-3)' : i + 1 === n ? 'var(--ink)' : 'var(--line-2)',
+                transition: 'all .2s',
+              }}
+            />
+          ))}
+        </div>
       </div>
-      <h2 className="mt-3 font-display text-4xl font-black leading-tight text-ink">
+
+      <div className="hm-display hm-h-m" style={{ marginBottom: 10, lineHeight: 1.12 }}>
         {question.question}
-      </h2>
+      </div>
+      <div style={{ marginBottom: 22 }} />
 
       {isButtons ? (
-        <div className="mt-7 flex flex-col gap-3">
-          {question.options!.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => onAnswer(opt)}
-              className="rounded-[16px] brut bg-cream px-5 py-4 text-left text-lg font-bold text-ink transition hover:bg-lime"
-            >
-              {opt}
-            </button>
-          ))}
-          <button
-            onClick={() => onAnswer('No preference — you choose')}
-            className="mt-1 self-start text-sm font-semibold text-soft hover:text-ink"
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {question.options!.map((opt) => {
+            const isSel = selected === opt
+            return (
+              <div
+                key={opt}
+                onClick={() => { setSelected(opt); submit(opt) }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setSelected(opt); submit(opt) } }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 14,
+                  padding: '15px 16px',
+                  border: `1.5px solid ${isSel ? 'var(--frame)' : 'var(--line-2)'}`,
+                  background: isSel ? 'var(--accent-weak)' : 'var(--surface-3)',
+                  cursor: 'pointer',
+                  boxShadow: isSel ? 'var(--hard)' : 'none',
+                }}
+              >
+                <span style={{
+                  width: 40,
+                  height: 40,
+                  display: 'grid',
+                  placeItems: 'center',
+                  background: isSel ? 'var(--lime)' : 'var(--surface-2)',
+                  color: 'var(--ink-2)',
+                  fontSize: 20,
+                  flex: '0 0 auto',
+                  border: `1.5px solid ${isSel ? 'var(--frame)' : 'var(--line-2)'}`,
+                }}>
+                  <Icon n="check" />
+                </span>
+                <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.35 }}>
+                  <span style={{ fontSize: 15.5, fontWeight: 600 }}>{opt}</span>
+                </span>
+                <span style={{
+                  marginLeft: 'auto',
+                  width: 20,
+                  height: 20,
+                  border: `2px solid ${isSel ? 'var(--ink)' : 'var(--line-2)'}`,
+                  display: 'grid',
+                  placeItems: 'center',
+                }}>
+                  {isSel && <span style={{ width: 9, height: 9, background: 'var(--ink)' }} />}
+                </span>
+              </div>
+            )
+          })}
+          <div
+            style={{ marginTop: 4, fontSize: 13.5, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer' }}
+            onClick={() => submit('No preference — you choose')}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') submit('No preference — you choose') }}
           >
-            Skip this question
-          </button>
+            <Icon n="pencil-simple" /> Or describe it in your own words
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', marginTop: 16 }}>
+            <button className="hm-btn hm-btn--ghost" onClick={() => onAnswer('No preference — you choose')}>
+              <Icon n="arrow-left" /> Back
+            </button>
+          </div>
         </div>
       ) : (
-        <div className="mt-7">
+        <div>
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && text.trim()) onAnswer(text.trim())
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && text.trim()) submit(text)
             }}
             placeholder="Describe it in your own words…"
             rows={4}
             autoFocus
-            className="w-full resize-none rounded-[16px] brut bg-cream px-5 py-4 text-lg text-ink outline-none placeholder:text-soft/55"
+            className="hm-input hm-input--lg"
           />
-          <div className="mt-4 flex justify-end gap-2">
-            <button
-              onClick={() => onAnswer('No preference — you choose')}
-              className="rounded-full px-4 py-2.5 text-sm font-semibold text-soft hover:text-ink"
-            >
-              Skip
+          <div style={{ display: 'flex', alignItems: 'center', marginTop: 20, gap: 10 }}>
+            <button className="hm-btn hm-btn--ghost" onClick={() => onAnswer('No preference — you choose')}>
+              <Icon n="arrow-left" /> Back
             </button>
             <button
-              onClick={() => text.trim() && onAnswer(text.trim())}
+              className="hm-btn hm-btn--primary hm-btn--lg"
+              style={{ marginLeft: 'auto' }}
+              onClick={() => submit(text)}
               disabled={!text.trim()}
-              className="rounded-full brut-2 bg-pink px-6 py-2.5 text-sm font-bold text-ink disabled:opacity-50"
             >
-              Continue
+              Continue <Icon n="arrow-right" />
             </button>
           </div>
         </div>

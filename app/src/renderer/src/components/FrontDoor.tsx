@@ -1,75 +1,191 @@
-import { useState } from 'react'
-import { Confetti } from './Confetti'
-import { BrandMark } from './BrandMark'
+import { Icon } from './ui/Icon'
+import { ClaudeSignal } from './ui/ClaudeSignal'
 import { useProjects } from '../store/projects'
 import { useWizard } from '../store/wizard'
+import type { Project } from '@shared/ipc-schemas'
 
-/** F1/F3 — the front door: one plain-language sentence kicks off the scoping wizard. */
-export function FrontDoor(): React.JSX.Element {
-  const begin = useWizard((s) => s.begin)
-  const hasProjects = useProjects((s) => s.projects.length > 0)
-  const backToSwitcher = useProjects((s) => s.backToSwitcher)
-  const [idea, setIdea] = useState('')
-  const [busy, setBusy] = useState(false)
+function Mark(): React.JSX.Element {
+  return (
+    <span className="hm-mark">H</span>
+  )
+}
 
-  const submit = async (): Promise<void> => {
-    if (!idea.trim() || busy) return
-    setBusy(true)
-    await begin(idea)
-  }
+function PrimaryDoor(): React.JSX.Element {
+  const startNew = (): void => useWizard.getState().startNew('build')
+  return (
+    <div className="hm-door hm-door--primary" onClick={startNew} role="button" tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') startNew() }}>
+      <div className="hm-door__icon hm-door__icon--accent">
+        <Icon n="compass-tool" size={25} />
+      </div>
+      <div className="hm-door__title">Build with structure</div>
+      <div className="hm-door__desc">
+        Describe what you want. Helm asks a few plain questions, lays out a clear plan, and guides you there one step at a time.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 'auto', paddingTop: 22 }}>
+        <div className="hm-subdoor hm-subdoor--cta">
+          <span className="hm-subdoor__ic"><Icon n="compass-tool" /></span>
+          <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.35 }}>
+            <span className="s-title">Start the guided journey</span>
+            <span className="s-sub">A clear plan, one step at a time</span>
+          </span>
+          <Icon n="arrow-right" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function IterateDoor(): React.JSX.Element {
+  const startFree = (): void => useWizard.getState().startNew('iterate')
+  return (
+    <div className="hm-door">
+      <div className="hm-door__icon hm-door__icon--quiet">
+        <Icon n="pencil-simple-line" size={25} />
+      </div>
+      <div className="hm-door__title">Build freely</div>
+      <div className="hm-door__desc">
+        Jump straight into free-form building, beside your live app — no rails, change anything anytime.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 'auto', paddingTop: 22 }}>
+        <div className="hm-subdoor hm-subdoor--cta" onClick={startFree} role="button" tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') startFree() }}>
+          <span className="hm-subdoor__ic"><Icon n="sparkle" /></span>
+          <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.35 }}>
+            <span className="s-title">Start fresh</span>
+            <span className="s-sub">Your first request scaffolds the app</span>
+          </span>
+          <Icon n="arrow-right" />
+        </div>
+        <div className="hm-subdoor is-soon">
+          <span className="hm-subdoor__ic"><Icon n="download-simple" /></span>
+          <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.35 }}>
+            <span className="s-title">Bring an existing app</span>
+            <span className="s-sub">Continue something you started elsewhere</span>
+          </span>
+          <span className="hm-soontag">Phase 5</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RecentRow({ project }: { project: Project }): React.JSX.Element {
+  const open = useProjects((s) => s.open)
+  const isLive = project.backgroundStatus === 'active' || project.mode === 'iterate'
+  const modeLabel = project.mode === 'build' ? 'Journey' : 'Iterate'
+  const statusLabel = project.railComplete
+    ? 'Completed'
+    : project.railStep != null
+      ? `${modeLabel} · Step ${project.railStep + 1}`
+      : modeLabel
 
   return (
-    <div className="relative h-full w-full bg-canvas">
-      <Confetti />
-      <div className="relative flex h-full flex-col px-12 py-9">
-        <div className="flex items-center justify-between">
-          <BrandMark />
-          {hasProjects && (
-            <button
-              onClick={backToSwitcher}
-              className="rounded-full brut-2 bg-cream px-4 py-1.5 text-sm font-semibold text-ink"
-            >
-              Your builds
-            </button>
-          )}
+    <div className="hm-recent" onClick={() => open(project.id)} role="button" tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') open(project.id) }}>
+      <span className="hm-recent__thumb"><Icon n="books" /></span>
+      <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.35, minWidth: 0 }}>
+        <span style={{ fontSize: 14.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {project.name}
+        </span>
+        <span style={{ fontSize: 12.5, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          {isLive && <span className="hm-dot hm-dot--live" />}
+          {statusLabel}
+        </span>
+      </span>
+    </div>
+  )
+}
+
+/** Front door — default (new user) and returning-user variants. */
+export function FrontDoor(): React.JSX.Element {
+  const projects = useProjects((s) => s.projects)
+  const hasProjects = projects.length > 0
+
+  if (hasProjects) {
+    return (
+      <div className="hm hm-guide">
+        {/* Top bar */}
+        <div className="hm-guide-top">
+          <Mark /><span className="hm-wordmark">Helm</span>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
+            <ClaudeSignal inline />
+            <div className="hm-top__back" style={{ background: 'transparent', border: '1px solid var(--line)' }}>
+              <Icon n="gear-six" />
+            </div>
+          </div>
         </div>
 
-        <div className="flex flex-1 flex-col items-center justify-center text-center">
-          <span className="-rotate-2 rounded-full brut-2 bg-pink px-4 py-1.5 text-[11px] font-bold tracking-[0.18em] text-ink">
-            WELCOME TO HELM
-          </span>
-          <h1 className="mt-6 font-display text-[64px] font-black leading-none text-ink">
-            What do you want to build?
-          </h1>
-          <p className="mt-4 text-lg text-soft">
-            Tell me your idea in a sentence — I’ll take it from there.
-          </p>
+        {/* Body */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 40px' }}>
+          <div style={{ width: '100%', maxWidth: 920 }}>
+            {/* Welcome back heading */}
+            <div style={{ marginBottom: 26 }}>
+              <span className="hm-eyebrow hm-eyebrow--prompt">Welcome back</span>
+              <div className="hm-display hm-h-m" style={{ marginTop: 12 }}>Pick up where you left off, or start fresh.</div>
+            </div>
 
-          <div className="mt-9 flex w-[760px] max-w-full items-center gap-3 rounded-[22px] brut bg-cream px-5 py-4">
-            <span className="text-xl text-violet">✦</span>
-            <input
-              value={idea}
-              onChange={(e) => setIdea(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void submit()
-              }}
-              placeholder="I want to build a customer feedback portal for our SaaS…"
-              className="min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-soft/55"
-              autoFocus
-            />
-            <button
-              onClick={() => void submit()}
-              disabled={busy}
-              className="flex shrink-0 items-center gap-1.5 rounded-full brut-2 bg-pink px-5 py-2.5 text-sm font-bold text-ink disabled:opacity-60"
-            >
-              {busy ? 'Starting…' : 'Start'} <span aria-hidden>→</span>
-            </button>
+            {/* Recent projects */}
+            <div style={{ marginBottom: 30 }}>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
+                  Jump back in
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                {projects.slice(0, 6).map((p) => (
+                  <RecentRow key={p.id} project={p} />
+                ))}
+              </div>
+            </div>
+
+            {/* Doors */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 22 }}>
+              <PrimaryDoor />
+              <IterateDoor />
+            </div>
           </div>
+        </div>
+      </div>
+    )
+  }
 
-          <p className="mt-4 text-sm text-soft/80">
-            <kbd className="rounded-md brut-2 bg-cream px-1.5 py-0.5 font-mono text-xs">⏎</kbd> to send ·
-            take your time, no character limits
-          </p>
+  // Default — no projects yet
+  return (
+    <div className="hm hm-guide">
+      {/* Top bar */}
+      <div className="hm-guide-top">
+        <Mark /><span className="hm-wordmark">Helm</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 16 }}>
+          <ClaudeSignal inline />
+          <div className="hm-top__back" style={{ background: 'transparent', border: '1px solid var(--line)' }}>
+            <Icon n="gear-six" />
+          </div>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 40px' }}>
+        <div style={{ width: '100%', maxWidth: 920 }}>
+          <div style={{ textAlign: 'center', marginBottom: 38 }}>
+            <span className="hm-eyebrow hm-eyebrow--prompt" style={{ justifyContent: 'center' }}>Welcome to Helm</span>
+            <div className="hm-display hm-h-l" style={{ marginTop: 14 }}>
+              What would you like to <span className="hm-hl">build</span>?<span className="hm-caret" />
+            </div>
+            <div style={{ fontSize: 16, color: 'var(--ink-2)', marginTop: 12 }}>
+              Two ways in. Pick the one that fits — you can always change course.
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 22, alignItems: 'stretch' }}>
+            <PrimaryDoor />
+            <IterateDoor />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 30 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13, color: 'var(--ink-3)' }}>
+              <span className="hm-claude__spark" style={{ width: 18, height: 18 }}><Icon n="sparkle" /></span>
+              Running on <b style={{ color: 'var(--ink-2)' }}>your Claude subscription</b> — no usage meter, no extra bill.
+            </div>
+          </div>
         </div>
       </div>
     </div>

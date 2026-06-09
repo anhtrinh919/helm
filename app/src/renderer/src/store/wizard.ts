@@ -5,23 +5,28 @@ import {
   isIpcError,
   type DecisionPrompt,
   type PlanBlock,
+  type ProjectMode,
   type WizardScopingResponse,
 } from '@shared/ipc-schemas'
 
-export type WizardStep = 'scoping' | 'plan_review' | 'approving' | 'error'
+export type WizardStep = 'idea' | 'scoping' | 'plan_review' | 'approving' | 'error'
 
 interface WizardState {
   idea: string
   projectId: string | null
   sessionId: string | null
   step: WizardStep
+  /** Build (guided journey) vs Iterate (freeform) — picked at the front door. */
+  mode: ProjectMode
   /** null while the agent is thinking up the next question. */
   question: DecisionPrompt | null
   qStep: number
   qTotal: number
   plan: PlanBlock[] | null
   name: string
-  /** Create the project and open the scoping conversation. */
+  /** Front-door entry: open a fresh wizard at the idea-input step in the chosen mode. */
+  startNew: (mode: ProjectMode) => void
+  /** Create the project and open the scoping conversation (in the chosen mode). */
   begin: (idea: string) => Promise<void>
   answer: (answer: string) => Promise<void>
   approve: () => Promise<void>
@@ -92,9 +97,17 @@ export const useWizard = create<WizardState>((set, get) => {
     idea: '',
     projectId: null,
     step: 'scoping',
+    mode: 'build',
     ...BLANK,
 
+    startNew: (mode) => {
+      set({ idea: '', projectId: null, step: 'idea', mode, ...BLANK })
+      // No project exists yet — open the wizard view on the idea-input step.
+      useProjects.getState().openWizard('')
+    },
+
     begin: async (idea) => {
+      const mode = get().mode
       // Short placeholder until the agent names it on plan approval — the raw idea
       // sentence is too long for headers (it overflowed the board title).
       const proj = await helm.projects.create('New build')
@@ -104,11 +117,13 @@ export const useWizard = create<WizardState>((set, get) => {
         return
       }
       const projectId = proj.project.id
-      set({ idea, projectId, step: 'scoping', ...BLANK })
+      // Iterate projects start freeform; Build is the default mode on create.
+      if (mode === 'iterate') await helm.projects.setMode(projectId, 'iterate')
+      set({ idea, projectId, step: 'scoping', mode, ...BLANK })
       void useProjects.getState().refresh()
       useProjects.getState().openWizard(projectId)
 
-      const res = await helm.wizard.startScoping(projectId, idea)
+      const res = await helm.wizard.startScoping(projectId, idea, mode)
       if (isIpcError(res)) {
         set({ step: 'error' })
         return
