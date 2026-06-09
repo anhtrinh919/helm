@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import { openDatabase, type Db } from '../connection'
+import { migrate } from '../migrations'
 import {
   createProject,
   getProject,
@@ -19,8 +20,9 @@ import {
   setWizardState,
   getWizardState,
   mapLegacyProjects,
+  reorderProjects,
 } from '../projects'
-import { addShelfItem, listShelfItems, promoteShelfItem } from '../shelf'
+import { addShelfItem, listShelfItems, promoteShelfItem, removeShelfItem } from '../shelf'
 import {
   createBuildStep,
   completeBuildStep,
@@ -35,6 +37,7 @@ import {
   updateCheckpoint,
   setPendingCheckpoint,
   promoteNextPlanned,
+  setCardOutcome,
 } from '../cards'
 import {
   createSession,
@@ -208,7 +211,7 @@ describe('migration 3 — artifact tracking + build steps', () => {
     const cols = db.prepare(`PRAGMA table_info(projects)`).all().map((r) => (r as { name: string }).name)
     expect(cols).toContain('artifact_dir')
     expect(cols).toContain('dev_pid')
-    expect(db.pragma('user_version', { simple: true })).toBe(5)
+    expect(db.pragma('user_version', { simple: true })).toBe(6)
   })
 
   it('artifact_dir is null on a fresh project and round-trips once set', () => {
@@ -421,7 +424,7 @@ describe('migration 5 — Build/Iterate modes, rail, shelf (Phase 4)', () => {
     expect(listShelfItems(db, p.id).map((i) => i.title)).toEqual(['CSV export', 'Dark mode'])
     const card = promoteShelfItem(db, b.id, p.id)
     expect(card.title).toBe('CSV export')
-    expect(card.status).toBe('planned')
+    expect(card.status).toBe('up_next')
     expect(listShelfItems(db, p.id).map((i) => i.title)).toEqual(['Dark mode'])
   })
 
@@ -470,5 +473,70 @@ describe('migration 5 — Build/Iterate modes, rail, shelf (Phase 4)', () => {
     // Idempotent: a second run changes nothing.
     mapLegacyProjects(db)
     expect(getProject(db, wip.id).railStep).toBe(1)
+  })
+})
+
+describe('migration 6 — card outcome + project position (Phase 1)', () => {
+  it('user_version is 6 after migrate, and both new columns exist', () => {
+    expect(db.pragma('user_version', { simple: true })).toBe(6)
+    const cardCols = (db.pragma('table_info(cards)') as { name: string }[]).map((r) => r.name)
+    expect(cardCols).toContain('outcome')
+    const projCols = (db.pragma('table_info(projects)') as { name: string }[]).map((r) => r.name)
+    expect(projCols).toContain('position')
+  })
+
+  it('migration 6 is idempotent: calling migrate() on an already-migrated db leaves version at 6 with no error', () => {
+    expect(() => migrate(db)).not.toThrow()
+    expect(db.pragma('user_version', { simple: true })).toBe(6)
+    // columns are not duplicated
+    const cardCols = (db.pragma('table_info(cards)') as { name: string }[]).map((r) => r.name)
+    expect(cardCols.filter((c) => c === 'outcome')).toHaveLength(1)
+  })
+
+  it('card outcome round-trips: seeded from plan detail returns the string; no detail → null', () => {
+    const p = createProject(db, 'OutcomeProj')
+    const cards = seedCardsFromPlan(db, p.id, [
+      { id: 'b1', title: 'Sign-in', detail: 'Let the right people in.' },
+      { id: 'b2', title: 'Dashboard' },
+    ])
+    expect(cards[0]!.outcome).toBe('Let the right people in.')
+    expect(cards[1]!.outcome).toBeNull()
+  })
+
+  it('setCardOutcome updates the outcome and round-trips', () => {
+    const p = createProject(db, 'SetOutcome')
+    const c = createCard(db, p.id, 'feature', 'My card')
+    expect(c.outcome).toBeNull()
+    const updated = setCardOutcome(db, c.id, 'Show the dashboard')
+    expect(updated.outcome).toBe('Show the dashboard')
+    expect(listCards(db, p.id)[0]!.outcome).toBe('Show the dashboard')
+  })
+
+  it('projects reorder round-trips and listProjects honors position', () => {
+    const a = createProject(db, 'Alpha')
+    const b = createProject(db, 'Beta')
+    const c = createProject(db, 'Gamma')
+    // Reorder: c, a, b
+    reorderProjects(db, [c.id, a.id, b.id])
+    const list = listProjects(db)
+    expect(list.map((p) => p.name)).toEqual(['Gamma', 'Alpha', 'Beta'])
+  })
+
+  it('promoteShelfItem creates a card whose outcome equals the request text and status is up_next', () => {
+    const p = createProject(db, 'ShelfOutcome')
+    const item = addShelfItem(db, p.id, 'Add dark mode support')
+    const card = promoteShelfItem(db, item.id, p.id)
+    expect(card.outcome).toBe('Add dark mode support')
+    expect(card.title).toBe('Add dark mode support')
+    expect(card.status).toBe('up_next')
+  })
+
+  it('removeShelfItem removes the item and throws NotFound if already gone', () => {
+    const p = createProject(db, 'ShelfRemove')
+    const item = addShelfItem(db, p.id, 'Park me')
+    expect(listShelfItems(db, p.id)).toHaveLength(1)
+    removeShelfItem(db, item.id)
+    expect(listShelfItems(db, p.id)).toHaveLength(0)
+    expect(() => removeShelfItem(db, item.id)).toThrow(NotFoundError)
   })
 })

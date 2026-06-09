@@ -28,9 +28,10 @@ export function deriveBackgroundStatus(db: Db, projectId: string): BackgroundSta
 }
 
 export function listProjects(db: Db): Project[] {
-  // rowid DESC is a stable tiebreaker when two projects share an updated_at ms.
+  // position ASC (Phase 1 reorder field) is primary; NULLs sort last via COALESCE.
+  // updated_at DESC, rowid DESC are the pre-Phase-1 tiebreakers, retained for stability.
   const rows = db
-    .prepare(`SELECT * FROM projects ORDER BY updated_at DESC, rowid DESC`)
+    .prepare(`SELECT * FROM projects ORDER BY COALESCE(position, 9999999) ASC, updated_at DESC, rowid DESC`)
     .all() as ProjectRow[]
   return rows.map((r) => toProject(r, deriveBackgroundStatus(db, r.id)))
 }
@@ -192,6 +193,18 @@ export function mapLegacyProjects(db: Db): void {
     const step = Math.min(done.n, plan.length - 1)
     db.prepare(`UPDATE projects SET rail_step = ? WHERE id = ?`).run(step, p.id)
   }
+}
+
+/** Assign sequential position values to the given project ids in one transaction.
+ *  orderedIds must contain every project id (complete reorder). */
+export function reorderProjects(db: Db, orderedIds: string[]): void {
+  const update = db.prepare(`UPDATE projects SET position = ? WHERE id = ?`)
+  const tx = db.transaction(() => {
+    orderedIds.forEach((id, i) => {
+      update.run(i, id)
+    })
+  })
+  tx()
 }
 
 export function updateProject(db: Db, id: string, patch: ProjectPatch): Project {

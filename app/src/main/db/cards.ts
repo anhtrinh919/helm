@@ -48,7 +48,8 @@ export function createCard(
   type: CardType,
   title: string,
   source: CardSource = 'user_added',
-  initialStatus: Extract<CardStatus, 'planned' | 'waiting'> = 'planned',
+  initialStatus: Extract<CardStatus, 'planned' | 'up_next' | 'waiting'> = 'planned',
+  outcome: string | null = null,
 ): Card {
   // FK guard: project must exist
   const exists = db.prepare(`SELECT 1 FROM projects WHERE id = ?`).get(projectId)
@@ -56,9 +57,9 @@ export function createCard(
   const now = Date.now()
   const id = randomUUID()
   db.prepare(
-    `INSERT INTO cards (id, project_id, type, title, status, source, position, depends_on, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)`,
-  ).run(id, projectId, type, title, initialStatus, source, nextPosition(db, projectId), now, now)
+    `INSERT INTO cards (id, project_id, type, title, status, source, position, depends_on, outcome, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?)`,
+  ).run(id, projectId, type, title, initialStatus, source, nextPosition(db, projectId), outcome, now, now)
   return getCard(db, id)
 }
 
@@ -82,24 +83,33 @@ export function setCardSession(db: Db, id: string, sessionId: string): Card {
   return getCard(db, id)
 }
 
-/** Seed one feature card per plan block, in order, with generated step labels. */
+/** Seed one feature card per plan block, in order, with generated step labels.
+ *  Each card's `outcome` is populated from `PlanBlock.detail` if present. */
 export function seedCardsFromPlan(db: Db, projectId: string, plan: PlanBlock[]): Card[] {
   const total = plan.length
   const now = Date.now()
   const insert = db.prepare(
-    `INSERT INTO cards (id, project_id, type, title, status, source, position, step_label, depends_on, created_at, updated_at)
-     VALUES (?, ?, 'feature', ?, 'planned', 'plan_seed', ?, ?, '[]', ?, ?)`,
+    `INSERT INTO cards (id, project_id, type, title, status, source, position, step_label, depends_on, outcome, created_at, updated_at)
+     VALUES (?, ?, 'feature', ?, 'planned', 'plan_seed', ?, ?, '[]', ?, ?, ?)`,
   )
   const ids: string[] = []
   const tx = db.transaction(() => {
     plan.forEach((block, i) => {
       const id = randomUUID()
       ids.push(id)
-      insert.run(id, projectId, block.title, i, `Step ${i + 1} of ${total}: ${block.title}`, now, now)
+      const outcome = block.detail ?? null
+      insert.run(id, projectId, block.title, i, `Step ${i + 1} of ${total}: ${block.title}`, outcome, now, now)
     })
   })
   tx()
   return ids.map((id) => getCard(db, id))
+}
+
+/** Update a card's plain-language outcome text. */
+export function setCardOutcome(db: Db, id: string, outcome: string): Card {
+  getCard(db, id) // throws NotFoundError if missing
+  db.prepare(`UPDATE cards SET outcome = ?, updated_at = ? WHERE id = ?`).run(outcome, Date.now(), id)
+  return getCard(db, id)
 }
 
 export function updateCheckpoint(

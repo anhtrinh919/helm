@@ -47,14 +47,16 @@ export function removeShelfItem(db: Db, itemId: string): void {
   if (res.changes === 0) throw new NotFoundError('shelf item not found')
 }
 
-/** Promote a parked item to a real board card (atomic: card created, item removed). */
+/** Promote a parked item to a real board card (atomic: card created, item removed).
+ *  The card's title AND outcome are both set from the parked request text.
+ *  Card lands at status up_next (appended to the spine). */
 export function promoteShelfItem(db: Db, itemId: string, projectId: string): Card {
   const row = db
     .prepare(`SELECT * FROM shelf_items WHERE id = ? AND project_id = ?`)
     .get(itemId, projectId) as ShelfRow | undefined
   if (!row) throw new NotFoundError('shelf item not found')
   const promote = db.transaction(() => {
-    const card = createCard(db, projectId, 'feature', row.title, 'user_added')
+    const card = createCard(db, projectId, 'feature', row.title, 'user_added', 'up_next', row.title)
     db.prepare(`DELETE FROM shelf_items WHERE id = ?`).run(itemId)
     return card
   })

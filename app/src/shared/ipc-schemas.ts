@@ -148,6 +148,8 @@ export const Card = z.object({
   sessionId: z.string().nullable(),
   decisionPrompt: DecisionPrompt.nullable(),
   checkpoint: Checkpoint.nullable(),
+  /** Plain-language description of what this card is for (Phase 1). Null when not set. */
+  outcome: z.string().nullable(),
   /** Fix-comment dressing (Phase 3, `fix_comment` cards only): the comment's
    *  type and whether it pointed at the whole page rather than one element.
    *  Renderer-safe — derived from the fix record's non-private columns. */
@@ -506,6 +508,24 @@ export const ImportStartRequest = z.object({
 
 export const StopSessionRequest = z.object({ sessionId: z.string() })
 
+/* --------------------------- Phase 1: outcome + reorder + shelf-remove --------------------------- */
+
+export const SetCardOutcomeRequest = z.object({
+  cardId: z.string(),
+  outcome: z.string(),
+})
+export type SetCardOutcomeRequest = z.infer<typeof SetCardOutcomeRequest>
+
+export const ReorderProjectsRequest = z.object({
+  orderedIds: z.array(z.string()),
+})
+export type ReorderProjectsRequest = z.infer<typeof ReorderProjectsRequest>
+
+export const RemoveShelfItemRequest = z.object({
+  itemId: z.string(),
+})
+export type RemoveShelfItemRequest = z.infer<typeof RemoveShelfItemRequest>
+
 /** Wizard UI state blob — renderer-shaped, persisted opaquely on the project row. */
 export const SaveWizardStateRequest = z.object({
   projectId: z.string(),
@@ -569,6 +589,10 @@ export const CH = {
   sessionsStop: 'sessions:stop',
   wizardSaveState: 'wizard:save-state',
   wizardGetState: 'wizard:get-state',
+  // Phase 1: outcome + reorder + shelf-remove (constants only — no bridge/endpoint wired yet)
+  cardsSetOutcome: 'cards:set-outcome',
+  projectsReorder: 'projects:reorder',
+  shelfRemove: 'shelf:remove',
   // pushes
   feedEvent: 'feed:event',
   boardUpdate: 'board:update',

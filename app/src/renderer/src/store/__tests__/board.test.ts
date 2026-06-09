@@ -28,6 +28,7 @@ const card = (over: Partial<Card>): Card => ({
   sessionId: null,
   decisionPrompt: null,
   checkpoint: null,
+  outcome: null,
   ...over,
 })
 

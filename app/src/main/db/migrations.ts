@@ -139,6 +139,21 @@ const MIGRATIONS: Migration[] = [
       CREATE INDEX idx_shelf_project ON shelf_items(project_id, created_at);
     `)
   },
+  // 6 — Phase 1: card outcome column + project position column
+  (db) => {
+    // Guard: only add columns if they don't already exist (idempotency for re-runs)
+    const cardCols = (db.pragma('table_info(cards)') as { name: string }[]).map((r) => r.name)
+    if (!cardCols.includes('outcome')) {
+      db.exec(`ALTER TABLE cards ADD COLUMN outcome TEXT;`)
+    }
+    const projCols = (db.pragma('table_info(projects)') as { name: string }[]).map((r) => r.name)
+    if (!projCols.includes('position')) {
+      db.exec(`ALTER TABLE projects ADD COLUMN position INTEGER;`)
+      // Backfill position = rowid for existing projects (deterministic insertion-order)
+      db.exec(`UPDATE projects SET position = rowid WHERE position IS NULL;`)
+      db.exec(`CREATE INDEX idx_projects_position ON projects(position);`)
+    }
+  },
 ]
 
 export function migrate(db: Database.Database): void {

@@ -79,6 +79,7 @@ export function createMockBridge(): HelmApi {
     sessionId: null,
     decisionPrompt: null,
     checkpoint: null,
+    outcome: null,
     ...extra,
   })
 
@@ -384,6 +385,7 @@ export function createMockBridge(): HelmApi {
           sessionId: null,
           decisionPrompt: null,
           checkpoint: null,
+          outcome: null,
         }
         list.push(c)
         return { card: c }
@@ -579,6 +581,7 @@ export function createMockBridge(): HelmApi {
           sessionId: null,
           decisionPrompt: null,
           checkpoint: null,
+          outcome: b.detail ?? null,
         }))
         cards[projectId] = seeded
         seeded.forEach((c) => pushBoard(c))
@@ -622,6 +625,7 @@ export function createMockBridge(): HelmApi {
           sessionId: null,
           decisionPrompt: null,
           checkpoint: null,
+          outcome: null,
           noteType: req.noteType,
           pageLevel: req.pinX == null,
         }

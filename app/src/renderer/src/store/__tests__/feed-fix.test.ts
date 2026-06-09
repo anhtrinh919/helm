@@ -49,6 +49,7 @@ const fixCard = (over: Partial<Card> = {}): Card => ({
   sessionId: 's1',
   decisionPrompt: null,
   checkpoint: { status: 'pending' },
+  outcome: null,
   ...over,
 })
 
