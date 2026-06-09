@@ -31,6 +31,15 @@ interface ProjectsState {
   showCelebration: (projectId: string) => void
   dismissCelebration: () => Promise<void>
   applyBackgroundStatus: (projectId: string, status: BackgroundStatus) => void
+  /** Rename a project. Saves only a non-empty, changed name. */
+  rename: (projectId: string, name: string) => Promise<boolean>
+  /** Delete a project row immediately (caller is expected to have confirmed). */
+  delete: (projectId: string) => Promise<boolean>
+  /**
+   * Reorder projects. On incomplete_list / unknown_project, re-fetches the
+   * authoritative list before returning so the next attempt uses fresh data.
+   */
+  reorder: (orderedIds: string[]) => Promise<boolean>
 }
 
 /** Where a project should open: the guided journey while a Build is unfinished,
@@ -103,4 +112,57 @@ export const useProjects = create<ProjectsState>((set, get) => ({
         p.id === projectId ? { ...p, backgroundStatus: status } : p,
       ),
     })),
+
+  rename: async (projectId, name) => {
+    const trimmed = name.trim()
+    const current = get().projects.find((p) => p.id === projectId)
+    // Only save a non-empty, actually-changed name.
+    if (!trimmed || trimmed === current?.name) return false
+    const res = await helm.projects.rename(projectId, trimmed)
+    if (isIpcError(res)) return false
+    set((s) => ({
+      projects: s.projects.map((p) => (p.id === projectId ? res.project : p)),
+    }))
+    return true
+  },
+
+  delete: async (projectId) => {
+    // Optimistically remove the row immediately.
+    set((s) => ({ projects: s.projects.filter((p) => p.id !== projectId) }))
+    const res = await helm.projects.delete(projectId)
+    if (isIpcError(res)) {
+      // Restore by re-fetching on failure.
+      await get().refresh()
+      return false
+    }
+    // If the deleted project was the current view, go back to the front door / switcher.
+    const v = get().view
+    if ('projectId' in v && v.projectId === projectId) {
+      const remaining = get().projects
+      set({ view: remaining.length === 0 ? { name: 'front-door' } : { name: 'switcher' } })
+    }
+    return true
+  },
+
+  reorder: async (orderedIds) => {
+    const res = await helm.projects.reorder(orderedIds)
+    if (isIpcError(res)) {
+      const err = res as { error: string }
+      if (err.error === 'incomplete_list' || err.error === 'unknown_project') {
+        // Re-fetch the authoritative list before allowing another attempt.
+        await get().refresh()
+      }
+      return false
+    }
+    // Reflect the new order locally.
+    set((s) => {
+      const byId = new Map(s.projects.map((p) => [p.id, p]))
+      const sorted = orderedIds.flatMap((id) => {
+        const p = byId.get(id)
+        return p ? [p] : []
+      })
+      return { projects: sorted }
+    })
+    return true
+  },
 }))

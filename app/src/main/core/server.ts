@@ -138,6 +138,32 @@ async function serveStatic(res: ServerResponse, staticDir: string, urlPath: stri
  * existing `__HELM_POINT__` / `__HELM_TEXTEDIT__` console channel; the same-origin
  * parent reads it and forwards to the core via the existing `points.*` helm calls.
  */
+/**
+ * The relay patch wraps __helmInstallTextEdit so that after the in-page commit
+ * script fires (console.log __HELM_TEXTEDIT__), it ALSO sends a postMessage to
+ * the parent frame. The parent (PointAnnotations) is same-origin in the browser
+ * proxy path, so it can listen for this message and call registerTextEdit with
+ * the selector/oldText/newText — the browser path's equivalent of the Electron
+ * webview-console interception in PointCaptureService.
+ */
+const TEXT_EDIT_RELAY_PATCH = `
+  var _origInstall = window.__helmInstallTextEdit;
+  window.__helmInstallTextEdit = function(){
+    _origInstall();
+    var S = window.__helmTextEdit;
+    if(!S) return;
+    var _origCommit = S.commit.bind(S);
+    S.commit = function(){
+      var el = S.editing;
+      var selector = S.selector || '';
+      var oldText = S.original || '';
+      var newText = (el && el.textContent ? el.textContent.trim() : '');
+      _origCommit();
+      try { window.parent.postMessage({type:'helm:text-edit-commit',selector:selector,oldText:oldText,newText:newText},'*'); } catch(e){}
+    };
+  };
+`
+
 const HELM_PREVIEW_BRIDGE = `<script>(function(){
   if (window.__helmPreviewBridge) return;
   window.__helmPreviewBridge = true;
@@ -145,6 +171,7 @@ const HELM_PREVIEW_BRIDGE = `<script>(function(){
   window.__helmRemovePoint = function(){ ${REMOVE_SCRIPT} };
   window.__helmInstallTextEdit = function(){ ${TEXT_EDIT_INSTALL_SCRIPT} };
   window.__helmRemoveTextEdit = function(){ ${TEXT_EDIT_REMOVE_SCRIPT} };
+  ${TEXT_EDIT_RELAY_PATCH}
 })();</script>`
 
 function injectBridge(html: string): string {
