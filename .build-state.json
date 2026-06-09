@@ -1,9 +1,11 @@
 {
-  "phase": 4,
-  "feature": "build-and-iterate",
+  "phase": 1,
+  "feature": "cockpit-and-journey",
   "step": "spec-complete",
   "reviewIteration": 0,
-  "requirementsHash": "2be25be1cc48f7133d25de465b7bbb7ba8d54d6dd234d92240b55726e51c0b83",
+  "requirementsHash": "710156dc833e863a06bb974946ae16950d4070a2bb92981e351d2853369cd9af",
   "currentSubStep": null,
-  "dogfoodPid": null
+  "dogfoodPid": null,
+  "foundationStatus": null,
+  "note": "Full re-cut 2026-06-09. Phase 1 spec written + skeptic-panel validated (converged 3 rounds, all lenses CLEAN). Next: /frontend (external-pencil) — design brief + Step 4b background foundation build of design-independent Groups 1-5."
 }
