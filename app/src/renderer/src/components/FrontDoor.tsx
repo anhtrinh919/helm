@@ -61,7 +61,7 @@ function IterateDoor(): React.JSX.Element {
           <span className="hm-subdoor__ic"><Icon n="download-simple" /></span>
           <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.35 }}>
             <span className="s-title">Bring an existing app</span>
-            <span className="s-sub">Continue something you started elsewhere</span>
+            <span className="s-sub">Import from Lovable, Bolt, or Replit — coming in a future update</span>
           </span>
           <span className="hm-soontag">Phase 5</span>
         </div>

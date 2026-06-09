@@ -17,11 +17,9 @@ function timeAgo(ts: number): string {
   return `${Math.round(hours / 24)} d ago`
 }
 
-function StatusBadge({ label, cls }: { label: string; cls: string }): React.JSX.Element {
+function StatusBadge({ label, chipCls }: { label: string; chipCls: string }): React.JSX.Element {
   return (
-    <span className={`shrink-0 rounded-full brut-2 px-2.5 py-1 text-[10px] font-black tracking-wide text-ink ${cls}`}>
-      {label}
-    </span>
+    <span className={`hm-chip ${chipCls}`}>{label}</span>
   )
 }
 
@@ -43,66 +41,73 @@ export function FixCommentCard({
 
   return (
     <div
-      className={`flex items-center gap-3.5 rounded-[14px] brut-2 bg-cream p-3 ${done ? 'opacity-70' : ''} ${
-        openable ? 'cursor-pointer hover:bg-cream/70' : ''
-      }`}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 12, border: '1.5px solid var(--frame)',
+        background: 'var(--surface-3)', padding: 12,
+        opacity: done ? 0.7 : 1,
+        cursor: openable ? 'pointer' : 'default',
+      }}
       onClick={openable ? () => onOpen(card.id) : undefined}
     >
-      {/* Thumb — the captured spot (page icon for whole-page comments; a calm
-          check once resolved). */}
-      <div className="grid h-[50px] w-[62px] shrink-0 place-items-center rounded-[6px] brut-2 bg-[#F5E9C8]">
+      {/* Thumb */}
+      <div style={{ width: 62, height: 50, flexShrink: 0, display: 'grid', placeItems: 'center', border: '1.5px solid var(--frame)', background: 'var(--surface-2)' }}>
         {done ? (
-          <span className="grid h-6 w-6 place-items-center rounded-full brut-2 bg-mint text-[11px] font-black text-ink">
+          <span style={{ width: 22, height: 22, background: 'var(--ink)', border: '1.5px solid var(--frame)', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 700, color: 'var(--lime)' }}>
             ✓
           </span>
         ) : isPage ? (
-          <span className="text-lg">🗎</span>
+          <span style={{ fontSize: 18 }}>🗎</span>
         ) : (
           <span
-            className={`grid h-6 w-6 place-items-center rounded-full brut-2 text-[11px] font-black text-cream ${
-              noteType === 'bug' ? 'bg-orange' : 'bg-blue'
-            }`}
+            style={{
+              width: 22, height: 22, display: 'grid', placeItems: 'center', border: '1.5px solid var(--frame)',
+              fontSize: 11, fontWeight: 700, color: 'var(--paper)',
+              background: noteType === 'bug' ? 'var(--fail)' : 'var(--ink)',
+            }}
           >
             {noteType === 'bug' ? '!' : '✎'}
           </span>
         )}
       </div>
 
-      {/* Body — type badge (dropped once resolved), age, note. */}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+      {/* Body */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
           {noteType && !done && (
             <span
-              className={`rounded-full border-2 px-2 py-0.5 text-[9px] font-black tracking-wide text-ink ${
-                noteType === 'bug' ? 'border-orange bg-orangesoft' : 'border-blue bg-bluesoft'
-              }`}
+              className="hm-chip"
+              style={{
+                fontSize: 9,
+                background: noteType === 'bug' ? 'var(--fail-weak)' : 'var(--surface-2)',
+                color: noteType === 'bug' ? 'var(--fail)' : 'var(--ink-3)',
+              }}
             >
               {noteType === 'bug' ? 'BROKEN' : 'CHANGE'}
             </span>
           )}
-          <span className="text-[11px] text-soft">{timeAgo(card.createdAt)}</span>
+          <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{timeAgo(card.createdAt)}</span>
         </div>
-        <div className="mt-1 truncate text-sm font-bold text-ink">{card.title}</div>
+        <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{card.title}</div>
       </div>
 
-      {/* Action / status. */}
+      {/* Action / status */}
       {done ? (
-        <StatusBadge label="✓ FIXED" cls="bg-mint" />
+        <StatusBadge label="✓ FIXED" chipCls="hm-chip--success" />
       ) : card.status === 'building' ? (
-        <StatusBadge label="IN PROGRESS" cls="bg-lime" />
+        <StatusBadge label="IN PROGRESS" chipCls="hm-chip--accent" />
       ) : card.status === 'needs_you' ? (
-        <StatusBadge label="NEEDS YOU" cls="bg-pink" />
+        <StatusBadge label="NEEDS YOU" chipCls="hm-chip--needs" />
       ) : card.status === 'failed' ? (
-        <StatusBadge label="OFF-TRACK" cls="bg-orange" />
+        <StatusBadge label="OFF-TRACK" chipCls="hm-chip--fail" />
       ) : queued ? (
-        <StatusBadge label="QUEUED" cls="bg-cream" />
+        <StatusBadge label="QUEUED" chipCls="" />
       ) : (
         <button
           onClick={(e) => {
             e.stopPropagation()
             onStartFix(card.id)
           }}
-          className="shrink-0 rounded-full brut-2 bg-pink px-4 py-2 text-[12px] font-bold text-ink"
+          className="hm-btn hm-btn--sm hm-btn--primary"
         >
           Start Fix →
         </button>

@@ -2,36 +2,8 @@
 
 /* Phase 1 "DOT-MATRIX" design canon — the complete .hm- class system + its
  * :root tokens (--bg, --ink, --lime, --display, --sans, …). Ported verbatim from
- * the Claude Design handover; new screens use these classes, legacy screens are
- * reskinned group by group until the sweep (Group 13) retires the @theme below. */
+ * the Claude Design handover; all screens now use these classes. */
 @import './helm.css';
-
-/* v4 "Maximalist" canon — mirrors pencil/v0.1.pen variables.
- * Retained only for not-yet-reskinned legacy screens; removed in the Group 13 sweep. */
-@theme {
-  --color-canvas: #ffefd2;
-  --color-surface: #fff7e6;
-  --color-cream: #fff7e6;
-  --color-ink: #1b1208;
-  --color-soft: #5c4a33;
-  --color-railcard: #1f1810;
-  --color-pink: #ff6f91;
-  --color-pinksoft: #ffd4de;
-  --color-violet: #6b4beb;
-  --color-violetsoft: #d9cfff;
-  --color-lime: #c8f23a;
-  --color-limedeep: #6e8500;
-  --color-blue: #3a6cff;
-  --color-bluesoft: #cfe0ff;
-  --color-orange: #ff7a29;
-  --color-orangesoft: #ffd6b8;
-  --color-mint: #7fd4b0;
-  --color-stage: #f7f2ea; /* neutral surround the embedded running app sits in */
-
-  --font-display: 'Fraunces', Georgia, serif;
-  --font-ui: 'Space Grotesk', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
-}
 
 html,
 body,
@@ -46,23 +18,4 @@ body {
   -webkit-font-smoothing: antialiased;
   margin: 0;
   overflow: hidden;
-}
-
-/* The signature chunky black outline used throughout the design. */
-.brut {
-  border: 3px solid var(--color-ink);
-}
-.brut-2 {
-  border: 2px solid var(--color-ink);
-}
-
-/* Indeterminate activity bar for the building spotlight — a sliding pill that
-   reads as "something is happening" without faking a percentage. */
-@keyframes helmslide {
-  0% {
-    transform: translateX(-110%);
-  }
-  100% {
-    transform: translateX(420%);
-  }
 }

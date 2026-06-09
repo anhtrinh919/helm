@@ -21,15 +21,17 @@ function duration(start: number, end: number | null): string {
   return r > 0 ? `${m}m ${r}s` : `${m}m`
 }
 
-const STATUS_PILL: Record<string, string> = {
-  complete: 'bg-mint text-ink',
-  failed: 'bg-orange text-ink',
-  running: 'bg-lime text-ink',
+type StatusKey = 'complete' | 'failed' | 'running'
+
+const STATUS_CHIP: Record<StatusKey, string> = {
+  complete: 'hm-chip--success',
+  failed:   'hm-chip--fail',
+  running:  'hm-chip--accent',
 }
-const STATUS_LABEL: Record<string, string> = {
+const STATUS_LABEL: Record<StatusKey, string> = {
   complete: 'BUILT',
-  failed: 'FAILED',
-  running: 'BUILDING',
+  failed:   'FAILED',
+  running:  'BUILDING',
 }
 
 export function ProgressPanel({ projectId }: { projectId: string }): React.JSX.Element {
@@ -53,26 +55,26 @@ export function ProgressPanel({ projectId }: { projectId: string }): React.JSX.E
 
   if (error) {
     return (
-      <div className="grid flex-1 place-items-center">
-        <p className="text-soft">{error}</p>
+      <div style={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+        <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>{error}</p>
       </div>
     )
   }
 
   if (entries === null) {
     return (
-      <div className="grid flex-1 place-items-center">
-        <p className="text-soft">Loading…</p>
+      <div style={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+        <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</p>
       </div>
     )
   }
 
   if (entries.length === 0) {
     return (
-      <div className="grid flex-1 place-items-center">
-        <div className="max-w-sm rounded-[18px] brut-2 border-dashed bg-cream/60 px-8 py-7 text-center">
-          <div className="font-display text-2xl font-black text-ink">Nothing built yet</div>
-          <div className="mt-1.5 text-soft">
+      <div style={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+        <div style={{ maxWidth: 340, border: '1.5px dashed var(--hair)', background: 'var(--surface-2)', padding: '28px 32px', textAlign: 'center' }}>
+          <div style={{ fontFamily: 'var(--display)', fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>Nothing built yet</div>
+          <div style={{ marginTop: 8, fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.5 }}>
             Each time Claude builds something for your project, it shows up here as a timeline entry.
           </div>
         </div>
@@ -83,25 +85,23 @@ export function ProgressPanel({ projectId }: { projectId: string }): React.JSX.E
   const reversed = [...entries].reverse()
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
-      <div className="font-display text-2xl font-black text-ink">Progress Timeline</div>
-      <div className="flex flex-col gap-3">
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', paddingRight: 4 }}>
+      <div style={{ fontFamily: 'var(--display)', fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>Progress Timeline</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {reversed.map((e) => {
-          const pill = STATUS_PILL[e.status] ?? 'bg-cream text-soft'
-          const label = STATUS_LABEL[e.status] ?? e.status
+          const chipCls = STATUS_CHIP[e.status as StatusKey] ?? ''
+          const label = STATUS_LABEL[e.status as StatusKey] ?? e.status
           return (
-            <div key={e.id} className="flex items-start gap-4 rounded-[14px] brut-2 bg-cream px-5 py-4">
-              <div className="mt-0.5 shrink-0">
-                <span className={`rounded-full px-2.5 py-1 text-[10px] font-black tracking-wide ${pill}`}>
-                  {label}
-                </span>
+            <div key={e.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 14, border: '1.5px solid var(--frame)', background: 'var(--surface-3)', padding: '12px 16px' }}>
+              <div style={{ flexShrink: 0, paddingTop: 2 }}>
+                <span className={`hm-chip ${chipCls}`}>{label}</span>
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="font-semibold text-ink">{e.cardTitle}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, color: 'var(--ink)', fontSize: 14 }}>{e.cardTitle}</div>
                 {e.cardStepLabel && (
-                  <div className="text-[11px] text-soft">{e.cardStepLabel}</div>
+                  <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 2 }}>{e.cardStepLabel}</div>
                 )}
-                <div className="mt-1 text-[11px] text-soft">
+                <div style={{ marginTop: 4, fontSize: 11, color: 'var(--ink-3)' }}>
                   {formatDate(e.startedAt)} · {duration(e.startedAt, e.completedAt)}
                 </div>
               </div>

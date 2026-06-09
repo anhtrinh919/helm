@@ -33,26 +33,26 @@ export function DecisionsPanel({ projectId }: { projectId: string }): React.JSX.
 
   if (error) {
     return (
-      <div className="grid flex-1 place-items-center">
-        <p className="text-soft">{error}</p>
+      <div style={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+        <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>{error}</p>
       </div>
     )
   }
 
   if (entries === null) {
     return (
-      <div className="grid flex-1 place-items-center">
-        <p className="text-soft">Loading…</p>
+      <div style={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+        <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</p>
       </div>
     )
   }
 
   if (entries.length === 0) {
     return (
-      <div className="grid flex-1 place-items-center">
-        <div className="max-w-sm rounded-[18px] brut-2 border-dashed bg-cream/60 px-8 py-7 text-center">
-          <div className="font-display text-2xl font-black text-ink">No decisions yet</div>
-          <div className="mt-1.5 text-soft">
+      <div style={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+        <div style={{ maxWidth: 340, border: '1.5px dashed var(--hair)', background: 'var(--surface-2)', padding: '28px 32px', textAlign: 'center' }}>
+          <div style={{ fontFamily: 'var(--display)', fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>No decisions yet</div>
+          <div style={{ marginTop: 8, fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.5 }}>
             When Claude asks you a question and you answer it, every call gets logged here.
           </div>
         </div>
@@ -61,22 +61,22 @@ export function DecisionsPanel({ projectId }: { projectId: string }): React.JSX.
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
-      <div className="font-display text-2xl font-black text-ink">Decisions Log</div>
-      <div className="flex flex-col gap-3">
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', paddingRight: 4 }}>
+      <div style={{ fontFamily: 'var(--display)', fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>Decisions Log</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {entries.map((e) => (
-          <div key={e.id} className="rounded-[14px] brut-2 bg-cream px-5 py-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-black tracking-[0.12em] text-soft">
+          <div key={e.id} style={{ border: '1.5px solid var(--frame)', background: 'var(--surface-3)', padding: '14px 18px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="hm-eyebrow" style={{ marginBottom: 6 }}>
                   {e.cardTitle ?? e.sessionName}
                 </div>
-                <div className="mt-1 font-semibold text-ink">{e.question}</div>
-                <div className="mt-2 rounded-lg bg-pinksoft/60 px-3 py-2 text-sm text-ink">
+                <div style={{ fontWeight: 600, color: 'var(--ink)', fontSize: 14 }}>{e.question}</div>
+                <div style={{ marginTop: 8, background: 'var(--needs-weak)', border: '1.5px solid var(--frame)', padding: '8px 12px', fontSize: 13, color: 'var(--ink)' }}>
                   {e.answer}
                 </div>
               </div>
-              <div className="shrink-0 text-[11px] text-soft">{formatTime(e.answeredAt)}</div>
+              <div style={{ flexShrink: 0, fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{formatTime(e.answeredAt)}</div>
             </div>
           </div>
         ))}

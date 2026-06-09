@@ -22,38 +22,38 @@ export function PointCommentBox({
   const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
   return (
-    <div className="w-[420px] max-w-[92%] rounded-[14px] brut-2 bg-cream p-4 shadow-[6px_6px_0_rgba(27,18,8,0.18)]">
+    <div style={{ width: 420, maxWidth: '92%', border: '1.5px solid var(--frame)', background: 'var(--surface-3)', padding: 14, boxShadow: 'var(--hard)' }}>
       {/* Eyebrow row */}
-      <div className="flex items-center gap-2">
-        <span className="h-2.5 w-2.5 rounded-full bg-violet" />
-        <span className="text-[10px] font-black tracking-[0.16em] text-soft">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span className="hm-dot" style={{ background: 'var(--parked)', width: 10, height: 10 }} />
+        <span className="hm-eyebrow">
           {variant === 'element' ? 'POINTING AT THIS' : 'ABOUT THIS WHOLE PAGE'}
         </span>
-        <span className="flex-1" />
-        <button onClick={onCancel} aria-label="Close" className="px-1 text-soft hover:text-ink">
+        <span style={{ flex: 1 }} />
+        <button onClick={onCancel} aria-label="Close" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)', padding: '0 2px' }}>
           ✕
         </button>
       </div>
 
       {/* Evidence: snapshot frame (element) or page indicator (page) */}
       {variant === 'element' ? (
-        <div className="relative mt-3 overflow-hidden rounded-[8px] brut-2 bg-[#FAF4E8] p-3">
-          <div className="grid h-16 place-items-center rounded-[6px] border-2 border-dashed border-ink/25">
-            <span className="text-[11px] font-bold text-soft">
+        <div style={{ position: 'relative', marginTop: 12, overflow: 'hidden', border: '1.5px solid var(--frame)', background: 'var(--surface-2)', padding: 12 }}>
+          <div style={{ display: 'grid', height: 64, placeItems: 'center', border: '1.5px dashed var(--hair)' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)' }}>
               The highlighted spot in your app
             </span>
           </div>
-          <span className="absolute bottom-2 right-2 flex items-center gap-1.5 rounded-[6px] bg-ink px-2 py-1">
-            <span className="h-1.5 w-1.5 rounded-[2px] bg-lime" />
-            <span className="text-[10px] font-bold text-cream">snapshot · {time}</span>
+          <span style={{ position: 'absolute', bottom: 8, right: 8, display: 'flex', alignItems: 'center', gap: 5, background: 'var(--ink)', padding: '3px 7px' }}>
+            <span style={{ width: 6, height: 6, background: 'var(--lime)', flexShrink: 0 }} />
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--paper)' }}>snapshot · {time}</span>
           </span>
         </div>
       ) : (
-        <div className="mt-3 flex items-center gap-3 rounded-[8px] brut-2 bg-[#FAF4E8] px-3 py-2.5">
-          <span className="grid h-8 w-8 place-items-center rounded-[6px] brut-2 bg-cream text-sm">
+        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, border: '1.5px solid var(--frame)', background: 'var(--surface-2)', padding: '10px 12px' }}>
+          <span style={{ width: 32, height: 32, display: 'grid', placeItems: 'center', border: '1.5px solid var(--frame)', background: 'var(--surface-3)', fontSize: 14, flexShrink: 0 }}>
             🗎
           </span>
-          <span className="text-[12px] font-bold text-ink">
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)' }}>
             Everything on this screen, as it looks right now
           </span>
         </div>
@@ -64,53 +64,55 @@ export function PointCommentBox({
         autoFocus
         value={note}
         onChange={(e) => setNote(e.target.value.slice(0, 500))}
-        placeholder="What’s wrong with this?"
+        placeholder="What's wrong with this?"
         rows={3}
-        className="mt-3 w-full resize-none rounded-[8px] brut-2 bg-canvas px-3 py-2 text-sm text-ink outline-none placeholder:text-soft"
+        className="hm-input"
+        style={{ marginTop: 12, resize: 'none' }}
       />
 
       {/* Type */}
-      <div className="mt-2 text-[10px] font-black tracking-[0.16em] text-soft">WHAT IS THIS?</div>
-      <div className="mt-1.5 flex gap-2">
+      <div className="hm-eyebrow" style={{ marginTop: 10 }}>WHAT IS THIS?</div>
+      <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
         <button
           onClick={() => setNoteType('bug')}
-          className={`flex-1 rounded-[8px] px-3 py-2 text-[12px] font-bold ${
-            noteType === 'bug'
-              ? 'border-2 border-orange bg-orangesoft text-ink'
-              : 'brut-2 bg-cream text-ink'
-          }`}
+          style={{
+            flex: 1, border: '1.5px solid var(--frame)', padding: '8px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            background: noteType === 'bug' ? 'var(--fail-weak)' : 'var(--surface-2)',
+            color: noteType === 'bug' ? 'var(--fail)' : 'var(--ink)',
+          }}
         >
-          Something’s broken
+          Something's broken
         </button>
         <button
           onClick={() => setNoteType('change')}
-          className={`flex-1 rounded-[8px] px-3 py-2 text-[12px] font-bold ${
-            noteType === 'change'
-              ? 'border-2 border-blue bg-bluesoft text-ink'
-              : 'brut-2 bg-cream text-ink'
-          }`}
+          style={{
+            flex: 1, border: '1.5px solid var(--frame)', padding: '8px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            background: noteType === 'change' ? 'var(--surface-3)' : 'var(--surface-2)',
+            color: 'var(--ink)',
+            outline: noteType === 'change' ? '1.5px solid var(--frame)' : 'none',
+            outlineOffset: noteType === 'change' ? '-3px' : 'unset',
+          }}
         >
           Change this
         </button>
       </div>
 
-      <div className="mt-3 h-px bg-ink/15" />
+      <div className="hm-divider" style={{ marginTop: 12 }} />
 
       {/* Actions */}
-      <div className="mt-2.5 flex items-center gap-3">
-        <span className="text-[11px] text-soft">
+      <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
           {variant === 'element' ? 'Saved with a snapshot' : 'Saved as a page comment'}
         </span>
-        <span className="flex-1" />
-        <button onClick={onCancel} className="text-[12px] font-bold text-soft hover:text-ink">
+        <span style={{ flex: 1 }} />
+        <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--ink-3)' }}>
           Cancel
         </button>
         <button
           onClick={() => noteType && onSubmit(note.trim(), noteType)}
           disabled={!ready}
-          className={`rounded-full px-4 py-2 text-[12px] font-bold ${
-            ready ? 'bg-ink text-cream' : 'cursor-not-allowed bg-ink/25 text-cream/70'
-          }`}
+          className={ready ? 'hm-btn hm-btn--sm hm-btn--primary' : 'hm-btn hm-btn--sm'}
+          style={!ready ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
         >
           Send to Helm
         </button>

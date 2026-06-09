@@ -37,37 +37,37 @@ export function PointModeToggle({ projectId }: { projectId: string }): React.JSX
   const live = state?.status === 'live'
 
   return (
-    <div className="flex items-center gap-2">
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       {active && (
-        <span className="flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5">
-          <span className="rounded-[5px] bg-white/15 px-1.5 py-0.5 text-[10px] font-bold text-cream">
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--ink)', border: '1.5px solid var(--frame)', padding: '4px 10px' }}>
+          <span style={{ background: 'rgba(255,255,255,.15)', padding: '2px 5px', fontSize: 10, fontWeight: 700, color: 'var(--paper)' }}>
             Esc
           </span>
-          <span className="text-[11px] font-bold text-cream">to exit point mode</span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--paper)' }}>to exit point mode</span>
         </span>
       )}
       <button
         onClick={() => (active ? exit(projectId) : enter(projectId))}
         disabled={!live}
         title={live ? 'Point & fix' : 'Point & fix (needs a running app)'}
-        className={`flex items-center gap-2 rounded-[10px] px-3 py-2 text-[12px] font-bold ${
-          active
-            ? 'border-2 border-ink bg-ink text-lime'
-            : live
-              ? 'brut-2 bg-cream text-ink'
-              : 'brut-2 cursor-not-allowed bg-cream text-ink opacity-40'
-        }`}
+        className="hm-btn hm-btn--sm"
+        style={{
+          background: active ? 'var(--ink)' : 'var(--surface-3)',
+          color: active ? 'var(--lime)' : live ? 'var(--ink)' : 'var(--ink-4)',
+          cursor: live ? 'pointer' : 'not-allowed',
+          opacity: live ? 1 : 0.4,
+        }}
       >
-        <CrosshairIcon className={active ? 'text-lime' : 'text-current'} />
+        <CrosshairIcon style={{ color: active ? 'var(--lime)' : 'currentColor' }} />
         Point &amp; fix
       </button>
     </div>
   )
 }
 
-function CrosshairIcon({ className }: { className?: string }): React.JSX.Element {
+function CrosshairIcon({ style }: { style?: React.CSSProperties }): React.JSX.Element {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className={className}>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={style}>
       <circle cx="12" cy="12" r="7" stroke="currentColor" strokeWidth="2.4" />
       <path d="M12 1v5M12 18v5M1 12h5M18 12h5" stroke="currentColor" strokeWidth="2.4" />
     </svg>
@@ -91,14 +91,16 @@ function PinsLayer({ projectId }: { projectId: string }): React.JSX.Element {
               style={{ left: `${(p.pinX as number) * 100}%`, top: `${(p.pinY as number) * 100}%` }}
             >
               <span
-                className={`grid h-[30px] w-[30px] place-items-center rounded-full brut-2 text-[13px] font-black text-cream ${
-                  p.noteType === 'bug' ? 'bg-orange' : 'bg-blue'
-                }`}
+                style={{
+                  width: 30, height: 30, display: 'grid', placeItems: 'center', border: '1.5px solid var(--frame)',
+                  fontSize: 13, fontWeight: 900, color: 'var(--paper)', flexShrink: 0,
+                  background: p.noteType === 'bug' ? 'var(--fail)' : 'var(--ink)',
+                }}
               >
                 {p.noteType === 'bug' ? '!' : '✎'}
               </span>
               {fixing && (
-                <span className="absolute left-[34px] top-1/2 -translate-y-1/2 whitespace-nowrap rounded-[10px] brut-2 bg-pinksoft px-2 py-1 text-[9px] font-black tracking-wide text-ink">
+                <span style={{ position: 'absolute', left: 34, top: '50%', transform: 'translateY(-50%)', whiteSpace: 'nowrap', border: '1.5px solid var(--frame)', background: 'var(--needs-weak)', padding: '3px 7px', fontSize: 9, fontWeight: 900, letterSpacing: '.06em', color: 'var(--needs)' }}>
                   FIXING NOW
                 </span>
               )}
@@ -112,20 +114,18 @@ function PinsLayer({ projectId }: { projectId: string }): React.JSX.Element {
 /** Cream veils around the locked rect + the frozen orange ring (F40). */
 function LockedRing({ rect }: { rect: BoundingBox }): React.JSX.Element {
   const { x, y, width: w, height: h } = rect
-  const veil = 'absolute bg-[#FFF7E6]/85'
+  const veilStyle: React.CSSProperties = { position: 'absolute', background: 'rgba(250,250,241,.88)' }
   return (
     <>
-      <div className={veil} style={{ left: 0, top: 0, right: 0, height: Math.max(0, y - 6) }} />
-      <div className={veil} style={{ left: 0, top: y + h + 6, right: 0, bottom: 0 }} />
-      <div className={veil} style={{ left: 0, top: Math.max(0, y - 6), width: Math.max(0, x - 6), height: h + 12 }} />
-      <div className={veil} style={{ left: x + w + 6, top: Math.max(0, y - 6), right: 0, height: h + 12 }} />
+      <div style={{ ...veilStyle, left: 0, top: 0, right: 0, height: Math.max(0, y - 6) }} />
+      <div style={{ ...veilStyle, left: 0, top: y + h + 6, right: 0, bottom: 0 }} />
+      <div style={{ ...veilStyle, left: 0, top: Math.max(0, y - 6), width: Math.max(0, x - 6), height: h + 12 }} />
+      <div style={{ ...veilStyle, left: x + w + 6, top: Math.max(0, y - 6), right: 0, height: h + 12 }} />
       <div
-        className="absolute rounded-[18px] border-2 border-orangesoft"
-        style={{ left: x - 10, top: y - 10, width: w + 20, height: h + 20 }}
+        style={{ position: 'absolute', border: '2px solid var(--fail-weak)', left: x - 10, top: y - 10, width: w + 20, height: h + 20 }}
       />
       <div
-        className="absolute rounded-[12px] border-[3px] border-orange"
-        style={{ left: x - 5, top: y - 5, width: w + 10, height: h + 10 }}
+        style={{ position: 'absolute', border: '3px solid var(--fail)', left: x - 5, top: y - 5, width: w + 10, height: h + 10 }}
       />
     </>
   )
@@ -134,17 +134,17 @@ function LockedRing({ rect }: { rect: BoundingBox }): React.JSX.Element {
 /** "Comment on this page" pill pinned to the bottom of the overlay (F44). */
 function AffordanceStrip({ onPage }: { onPage: () => void }): React.JSX.Element {
   return (
-    <div className="pointer-events-auto absolute bottom-4 left-1/2 z-30 -translate-x-1/2">
+    <div style={{ pointerEvents: 'auto', position: 'absolute', bottom: 16, left: '50%', zIndex: 30, transform: 'translateX(-50%)' }}>
       <button
         onClick={onPage}
-        className="flex items-center gap-2.5 rounded-full border-2 border-ink bg-ink py-2 pl-2 pr-4 shadow-[4px_4px_0_rgba(27,18,8,0.25)]"
+        style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--ink)', border: '2px solid var(--frame)', padding: '8px 16px 8px 8px', boxShadow: 'var(--hard)', cursor: 'pointer' }}
       >
-        <span className="grid h-6 w-6 place-items-center rounded-[8px] bg-lime text-[14px] font-black text-ink">
+        <span style={{ width: 24, height: 24, display: 'grid', placeItems: 'center', background: 'var(--lime)', fontSize: 14, fontWeight: 900, color: 'var(--ink)', flexShrink: 0 }}>
           +
         </span>
-        <span className="text-[12px] font-bold text-cream">Comment on this page</span>
-        <span className="h-4 w-px bg-white/25" />
-        <span className="text-[11px] text-white/60">or point at any element</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--paper)' }}>Comment on this page</span>
+        <span style={{ width: 1, height: 16, background: 'rgba(255,255,255,.25)', flexShrink: 0 }} />
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,.55)' }}>or point at any element</span>
       </button>
     </div>
   )
@@ -503,7 +503,7 @@ export function PointAnnotations({ projectId }: { projectId: string }): React.JS
       )}
 
       {justFiled && (
-        <div className="absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-full brut-2 bg-lime px-4 py-2 text-[12px] font-bold text-ink shadow-[4px_4px_0_rgba(27,18,8,0.2)]">
+        <div style={{ position: 'absolute', left: '50%', top: 16, zIndex: 40, transform: 'translateX(-50%)', background: 'var(--lime)', border: '1.5px solid var(--frame)', padding: '7px 16px', fontSize: 12, fontWeight: 700, color: 'var(--ink)', boxShadow: 'var(--hard)', whiteSpace: 'nowrap' }}>
           Sent to the board — find it under REPORTED
         </div>
       )}

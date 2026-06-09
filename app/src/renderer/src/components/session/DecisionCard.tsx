@@ -30,20 +30,20 @@ export function DecisionCard({
 
   if (answered) {
     return (
-      <div className="rounded-[14px] brut-2 bg-cream/60 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-black tracking-[0.16em] text-soft">DECIDED</span>
+      <div style={{ border: '1.5px solid var(--frame)', background: 'var(--surface-2)', padding: '12px 14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span className="hm-eyebrow">DECIDED</span>
           {onReopen && (
             <button
               onClick={onReopen}
-              className="text-xs font-bold text-violet underline-offset-2 hover:underline"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--accent-text)', padding: 0 }}
             >
               Re-open
             </button>
           )}
         </div>
-        <div className="mt-1 text-sm text-soft">Q: {prompt.question}</div>
-        <div className="text-sm font-bold text-ink">A: {answer ?? prompt.answer}</div>
+        <div style={{ marginTop: 6, fontSize: 13, color: 'var(--ink-3)' }}>Q: {prompt.question}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>A: {answer ?? prompt.answer}</div>
       </div>
     )
   }
@@ -57,53 +57,47 @@ export function DecisionCard({
   const isPlan = prompt.type === 'plan_approval'
 
   return (
-    <div className={`rounded-[16px] brut bg-pinksoft ${compact ? 'p-4' : 'p-5'}`}>
-      <div className="flex items-center gap-2">
-        <span className="h-2 w-2 animate-pulse rounded-full bg-pink" />
-        <span className="text-[10px] font-black tracking-[0.18em] text-ink">NEEDS YOU</span>
-        {subtitle && <span className="text-[11px] font-medium text-soft">· paused on {subtitle}</span>}
+    <div className="hm-callout hm-callout--needs" style={{ flexDirection: 'column', gap: 10, padding: compact ? 14 : 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span className="hm-dot hm-dot--needs" />
+        <span className="hm-eyebrow" style={{ color: 'var(--needs)' }}>NEEDS YOU</span>
+        {subtitle && <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>· paused on {subtitle}</span>}
       </div>
       <div
-        className={`mt-2 font-display font-black leading-snug text-ink ${compact ? 'text-lg' : 'text-2xl'}`}
+        style={{ fontFamily: 'var(--display)', fontWeight: 700, lineHeight: 1.2, color: 'var(--ink)', fontSize: compact ? 15 : 20 }}
       >
         {prompt.question}
       </div>
 
       {isPlan ? (
-        <div className="mt-3 flex gap-2">
-          <button
-            onClick={() => onAnswer('approve')}
-            className="rounded-full brut-2 bg-lime px-5 py-2 text-sm font-bold text-ink"
-          >
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => onAnswer('approve')} className="hm-btn hm-btn--accent">
             Approve
           </button>
-          <button
-            onClick={() => setOwn(true)}
-            className="rounded-full brut-2 bg-cream px-5 py-2 text-sm font-bold text-ink"
-          >
+          <button onClick={() => setOwn(true)} className="hm-btn">
             Change something
           </button>
         </div>
       ) : showButtons && !own ? (
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
           {prompt.options!.map((opt) => (
             <button
               key={opt}
               onClick={() => onAnswer(opt)}
-              className="rounded-full brut-2 bg-cream px-4 py-2 text-sm font-bold text-ink hover:bg-lime"
+              className="hm-btn hm-btn--sm"
             >
               {opt}
             </button>
           ))}
           <button
             onClick={() => setOwn(true)}
-            className="rounded-full px-3 py-2 text-sm font-semibold text-soft hover:text-ink"
+            className="hm-btn hm-btn--ghost hm-btn--sm"
           >
             Own answer
           </button>
         </div>
       ) : (
-        <div className="mt-3 flex gap-2">
+        <div style={{ display: 'flex', gap: 8 }}>
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -112,12 +106,10 @@ export function DecisionCard({
             }}
             placeholder="Type your answer…"
             autoFocus
-            className="flex-1 rounded-full brut-2 bg-cream px-4 py-2 text-sm text-ink outline-none placeholder:text-soft/55"
+            className="hm-input"
+            style={{ flex: 1, minHeight: 'unset', height: 36, padding: '0 12px' }}
           />
-          <button
-            onClick={submitOwn}
-            className="rounded-full brut-2 bg-ink px-4 py-2 text-sm font-bold text-cream"
-          >
+          <button onClick={submitOwn} className="hm-btn hm-btn--primary">
             Send
           </button>
         </div>

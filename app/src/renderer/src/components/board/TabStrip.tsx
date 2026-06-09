@@ -24,16 +24,21 @@ export function TabStrip({
   trailing?: React.ReactNode
 }): React.JSX.Element {
   return (
-    <div className="flex items-center gap-2">
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 20px', borderBottom: '1.5px solid var(--frame)', background: 'var(--surface)', height: 42, flexShrink: 0 }}>
       {TABS.map((t) => {
         const isActive = t.id === active
         return (
           <button
             key={t.id}
             onClick={() => onSelect(t.id)}
-            className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold ${
-              isActive ? 'bg-ink text-cream' : 'brut-2 bg-cream text-ink'
-            }`}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px', height: 28,
+              fontSize: 12, fontWeight: 700, fontFamily: 'var(--sans)', letterSpacing: '-.01em',
+              border: '1.5px solid', borderColor: isActive ? 'var(--frame)' : 'transparent',
+              background: isActive ? 'var(--ink)' : 'transparent',
+              color: isActive ? 'var(--paper)' : 'var(--ink-3)',
+              cursor: 'pointer',
+            }}
           >
             {t.label}
           </button>
@@ -41,7 +46,7 @@ export function TabStrip({
       })}
       {trailing && (
         <>
-          <span className="flex-1" />
+          <span style={{ flex: 1 }} />
           {trailing}
         </>
       )}

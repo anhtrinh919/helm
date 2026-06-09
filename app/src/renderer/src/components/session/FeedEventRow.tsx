@@ -12,17 +12,17 @@ export function clockTime(ms: number): string {
  *  and checkpoint markers are breadcrumbs (the interactive blocks render elsewhere). */
 export function FeedEventRow({ event }: { event: FeedEvent }): React.JSX.Element {
   const ts = (
-    <span className="w-16 shrink-0 pt-0.5 font-mono text-[11px] text-soft/70">
+    <span style={{ width: 60, flexShrink: 0, fontSize: 11, color: 'var(--ink-4)', fontFamily: 'var(--mono)', paddingTop: 2 }}>
       {clockTime(event.createdAt)}
     </span>
   )
 
   if (event.kind === 'activity') {
     return (
-      <div className="flex gap-3">
+      <div style={{ display: 'flex', gap: 10 }}>
         {ts}
-        <div className="flex items-center gap-2 text-sm text-soft">
-          <span className="h-1.5 w-1.5 rounded-full bg-violet" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, color: 'var(--ink-3)' }}>
+          <span className="hm-dot" style={{ background: 'var(--parked)', opacity: 0.7 }} />
           {event.text}
         </div>
       </div>
@@ -31,9 +31,9 @@ export function FeedEventRow({ event }: { event: FeedEvent }): React.JSX.Element
 
   if (event.kind === 'steering') {
     return (
-      <div className="flex gap-3">
+      <div style={{ display: 'flex', gap: 10 }}>
         {ts}
-        <div className="rounded-[10px] brut-2 bg-violetsoft px-3 py-1.5 text-sm font-semibold text-ink">
+        <div style={{ border: '1.5px solid var(--frame)', background: 'var(--accent-weak)', padding: '6px 12px', fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
           {event.text}
         </div>
       </div>
@@ -42,10 +42,10 @@ export function FeedEventRow({ event }: { event: FeedEvent }): React.JSX.Element
 
   if (event.kind === 'decision_prompt') {
     return (
-      <div className="flex gap-3">
+      <div style={{ display: 'flex', gap: 10 }}>
         {ts}
-        <div className="flex items-center gap-2 text-sm font-bold text-ink">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-pink" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>
+          <span className="hm-dot hm-dot--needs" />
           Paused to ask you something
         </div>
       </div>
@@ -54,10 +54,10 @@ export function FeedEventRow({ event }: { event: FeedEvent }): React.JSX.Element
 
   if (event.kind === 'checkpoint') {
     return (
-      <div className="flex gap-3">
+      <div style={{ display: 'flex', gap: 10 }}>
         {ts}
-        <div className="flex items-center gap-2 text-sm font-bold text-ink">
-          <span className="grid h-4 w-4 place-items-center rounded-full bg-mint text-[10px] text-ink">✓</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>
+          <span style={{ width: 16, height: 16, background: 'var(--ink)', border: '1.5px solid var(--frame)', display: 'grid', placeItems: 'center', fontSize: 10, color: 'var(--lime)', flexShrink: 0 }}>✓</span>
           First pass is ready to review
         </div>
       </div>
@@ -66,19 +66,19 @@ export function FeedEventRow({ event }: { event: FeedEvent }): React.JSX.Element
 
   if (event.kind === 'error') {
     return (
-      <div className="flex gap-3">
+      <div style={{ display: 'flex', gap: 10 }}>
         {ts}
-        <div className="text-sm font-semibold text-orange">{event.text}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--fail)' }}>{event.text}</div>
       </div>
     )
   }
 
   if (event.kind === 'stopped') {
     return (
-      <div className="flex gap-3">
+      <div style={{ display: 'flex', gap: 10 }}>
         {ts}
-        <div className="flex items-center gap-2 text-sm font-semibold text-soft">
-          <span className="grid h-4 w-4 place-items-center rounded-full bg-soft/25 text-[9px] text-ink">■</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600, color: 'var(--ink-3)' }}>
+          <span style={{ width: 14, height: 14, background: 'var(--surface-2)', border: '1.5px solid var(--frame)', display: 'grid', placeItems: 'center', fontSize: 9, color: 'var(--ink-3)', flexShrink: 0 }}>■</span>
           {event.text}
         </div>
       </div>
@@ -88,10 +88,10 @@ export function FeedEventRow({ event }: { event: FeedEvent }): React.JSX.Element
   // Phase 4 triage: a request was parked on the For-later shelf.
   if (event.kind === 'parked') {
     return (
-      <div className="flex gap-3">
+      <div style={{ display: 'flex', gap: 10 }}>
         {ts}
-        <div className="flex items-center gap-2 text-sm font-semibold text-soft">
-          <span className="grid h-4 w-4 place-items-center rounded-full bg-soft/25 text-[9px] text-ink">⊕</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600, color: 'var(--ink-3)' }}>
+          <span className="hm-dot hm-dot--parked" />
           {event.text}
         </div>
       </div>
@@ -100,9 +100,9 @@ export function FeedEventRow({ event }: { event: FeedEvent }): React.JSX.Element
 
   // narration
   return (
-    <div className="flex gap-3">
+    <div style={{ display: 'flex', gap: 10 }}>
       {ts}
-      <div className="text-sm leading-relaxed text-ink">{event.text}</div>
+      <div style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--ink)' }}>{event.text}</div>
     </div>
   )
 }

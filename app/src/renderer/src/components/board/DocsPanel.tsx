@@ -23,26 +23,26 @@ export function DocsPanel({ projectId }: { projectId: string }): React.JSX.Eleme
 
   if (error) {
     return (
-      <div className="grid flex-1 place-items-center">
-        <p className="text-soft">{error}</p>
+      <div style={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+        <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>{error}</p>
       </div>
     )
   }
 
   if (content === undefined) {
     return (
-      <div className="grid flex-1 place-items-center">
-        <p className="text-soft">Loading…</p>
+      <div style={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+        <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</p>
       </div>
     )
   }
 
   if (content === null) {
     return (
-      <div className="grid flex-1 place-items-center">
-        <div className="max-w-sm rounded-[18px] brut-2 border-dashed bg-cream/60 px-8 py-7 text-center">
-          <div className="font-display text-2xl font-black text-ink">No docs yet</div>
-          <div className="mt-1.5 text-soft">
+      <div style={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+        <div style={{ maxWidth: 340, border: '1.5px dashed var(--hair)', background: 'var(--surface-2)', padding: '28px 32px', textAlign: 'center' }}>
+          <div style={{ fontFamily: 'var(--display)', fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>No docs yet</div>
+          <div style={{ marginTop: 8, fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.5 }}>
             When Claude builds your app, it can create a README in the project folder. It'll appear here.
           </div>
         </div>
@@ -51,10 +51,10 @@ export function DocsPanel({ projectId }: { projectId: string }): React.JSX.Eleme
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
-      <div className="font-display text-2xl font-black text-ink">Docs</div>
-      <div className="rounded-[14px] brut-2 bg-cream px-6 py-5">
-        <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-ink">{content}</pre>
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', paddingRight: 4 }}>
+      <div style={{ fontFamily: 'var(--display)', fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>Docs</div>
+      <div style={{ border: '1.5px solid var(--frame)', background: 'var(--surface-3)', padding: '18px 22px' }}>
+        <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--mono)', fontSize: 13, lineHeight: 1.6, color: 'var(--ink)' }}>{content}</pre>
       </div>
     </div>
   )

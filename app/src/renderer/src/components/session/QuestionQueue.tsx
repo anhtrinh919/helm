@@ -14,18 +14,18 @@ export function QuestionQueue({
   const open = questions.filter((q) => q.status === 'pending' || q.status === 'reopened').length
 
   return (
-    <div className="rounded-[18px] brut bg-cream p-4">
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] font-black tracking-[0.18em] text-ink">QUESTIONS</span>
-        <span className="rounded-full bg-ink px-2 py-0.5 text-[10px] font-bold text-cream">
+    <div style={{ border: '1.5px solid var(--frame)', background: 'var(--surface-3)', padding: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span className="hm-eyebrow">QUESTIONS</span>
+        <span className="hm-chip" style={{ background: open > 0 ? 'var(--needs-weak)' : 'var(--surface-2)', color: open > 0 ? 'var(--needs)' : 'var(--ink-3)' }}>
           {open} open
         </span>
       </div>
 
       {questions.length === 0 ? (
-        <div className="mt-3 text-sm text-soft">No questions yet.</div>
+        <div style={{ marginTop: 12, fontSize: 13, color: 'var(--ink-3)' }}>No questions yet.</div>
       ) : (
-        <div className="mt-3 flex flex-col gap-2">
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {questions.map((q) => (
             <DecisionCard
               key={q.id}
