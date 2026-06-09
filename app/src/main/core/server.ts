@@ -159,7 +159,52 @@ const TEXT_EDIT_RELAY_PATCH = `
       var oldText = S.original || '';
       var newText = (el && el.textContent ? el.textContent.trim() : '');
       _origCommit();
-      try { window.parent.postMessage({type:'helm:text-edit-commit',selector:selector,oldText:oldText,newText:newText},'*'); } catch(e){}
+      try { window.parent.postMessage({type:'helm:text-edit-commit',selector:selector,oldText:oldText,newText:newText}, window.location.origin); } catch(e){}
+    };
+  };
+`
+
+/**
+ * The point-capture equivalent of TEXT_EDIT_RELAY_PATCH. In the browser-proxy path
+ * the in-page click handler only `console.log`s `__HELM_POINT__…`, which the parent
+ * window cannot read across the iframe — so without this the geometry never reaches
+ * the renderer and the comment silently degrades to a page-level note. The patch
+ * wraps __helmInstallPoint so that after a click locks a selection, it ALSO
+ * postMessages the selector + geometry to the same-origin parent (PointAnnotations
+ * listens for `helm:point-capture`). The selector is carried to the renderer here
+ * (the browser proxy already exposes it), then travels back to core in the
+ * points:register request — see the SELECTOR ASYMMETRY note in point-capture-service.
+ */
+const POINT_CAPTURE_RELAY_PATCH = `
+  var _origInstallPoint = window.__helmInstallPoint;
+  window.__helmInstallPoint = function(){
+    _origInstallPoint();
+    var S = window.__helmPoint;
+    if(!S) return;
+    // S.click is registered as the capturing click listener by the install script,
+    // so we can't just reassign it after the fact. Instead, observe the same
+    // __HELM_POINT__ payload the original handler logs by wrapping console.log
+    // while point mode is active, and forward it to the same-origin parent. This
+    // mirrors the text-edit relay's intent (post the captured geometry+selector to
+    // the parent) without racing the already-registered listener.
+    if (S.__helmRelayInstalled) return;
+    S.__helmRelayInstalled = true;
+    var _origLog = console.log.bind(console);
+    console.log = function(){
+      try {
+        var first = arguments[0];
+        if (typeof first === 'string' && first.indexOf('__HELM_POINT__') === 0) {
+          var data = JSON.parse(first.slice('__HELM_POINT__'.length));
+          window.parent.postMessage({
+            type:'helm:point-capture',
+            selector:data.selector,
+            rect:data.rect,
+            px:data.px,
+            py:data.py
+          }, window.location.origin);
+        }
+      } catch(err){}
+      return _origLog.apply(console, arguments);
     };
   };
 `
@@ -172,17 +217,24 @@ const HELM_PREVIEW_BRIDGE = `<script>(function(){
   window.__helmInstallTextEdit = function(){ ${TEXT_EDIT_INSTALL_SCRIPT} };
   window.__helmRemoveTextEdit = function(){ ${TEXT_EDIT_REMOVE_SCRIPT} };
   ${TEXT_EDIT_RELAY_PATCH}
+  ${POINT_CAPTURE_RELAY_PATCH}
 })();</script>`
 
-function injectBridge(html: string): string {
+function injectBridge(html: string, projectId: string): string {
+  // A <base href> so the proxied app's root-relative URLs (e.g. /assets/x.js,
+  // /favicon.ico) resolve under the proxy path instead of 404ing at the Helm
+  // origin root. Injected FIRST (before the bridge script) so it applies to every
+  // subsequent relative URL in the document.
+  const base = `<base href="/preview/${projectId}/">`
+  const head = base + HELM_PREVIEW_BRIDGE
   // Inject right after <head> so the helpers exist before app scripts; fall back
   // to prepending if there is no <head> (fragment / unusual document).
   const headOpen = html.match(/<head[^>]*>/i)
   if (headOpen && headOpen.index != null) {
     const at = headOpen.index + headOpen[0].length
-    return html.slice(0, at) + HELM_PREVIEW_BRIDGE + html.slice(at)
+    return html.slice(0, at) + head + html.slice(at)
   }
-  return HELM_PREVIEW_BRIDGE + html
+  return head + html
 }
 
 /**
@@ -234,7 +286,7 @@ async function handlePreview(
   const isHtml = contentType.includes('text/html')
   if (isHtml) {
     const html = await upstream.text()
-    const body = injectBridge(html)
+    const body = injectBridge(html, projectId)
     res.writeHead(upstream.status, { 'content-type': 'text/html; charset=utf-8' })
     res.end(body)
     return

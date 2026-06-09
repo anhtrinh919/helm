@@ -99,7 +99,19 @@ export class UnknownChannelError extends Error {
   }
 }
 
-/** The one bus per process. The HTTP/WS server and every bridge share it. */
+/**
+ * The one bus per process. The HTTP/WS server and every bridge share it.
+ *
+ * SINGLE-CORE-PER-PROCESS INVARIANT: `bus` is a module-level singleton, so all
+ * handler registrations and push clients are global to the process. Booting two
+ * cores in the same process would have them register handlers on the same bus
+ * and fan pushes to each other's WebSocket clients — silent cross-talk. The
+ * runtime only ever starts one core per process (Electron shell or the headless
+ * dogfood), and `startCore` enforces that with a hard guard. If parallel cores
+ * are ever needed in one process, the follow-up is to scope the bus to a core
+ * instance (pass a per-core bus into the bridges and the server) rather than
+ * importing this module-level singleton.
+ */
 export const bus = new HelmBus()
 
 /**

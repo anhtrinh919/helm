@@ -350,12 +350,18 @@ export const StopDevServerRequest = z.object({ projectId: z.string() })
 
 export const RegisterPointRequest = z.object({
   projectId: z.string(),
-  // Element-level capture is GEOMETRY ONLY (all omitted for page-level
-  // comments). The selector and screenshot crop never appear here by
+  // Element-level capture is GEOMETRY ONLY for the Electron path (all omitted for
+  // page-level comments). The selector and screenshot crop never appear here by
   // construction — main merges its own pending capture at register time.
   boundingBox: BoundingBox.optional(),
   pinX: z.number().min(0).max(1).optional(),
   pinY: z.number().min(0).max(1).optional(),
+  // BROWSER-PROXY PATH ONLY: the same-origin proxy already exposes the selector to
+  // the renderer (it postMessages `helm:point-capture`), so the browser path
+  // carries it back here directly. When present, points-bridge anchors the
+  // fix_comment to this selector and SKIPS the main-side pending-capture merge.
+  // Absent (Electron path) → the existing consumePending merge is used unchanged.
+  selector: z.string().optional(),
   note: z.string().min(1).max(500),
   noteType: NoteType,
 })

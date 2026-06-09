@@ -63,6 +63,10 @@ describe('helm HTTP/WS transport', () => {
     const body = await html.text()
     expect(body).toContain('__helmInstallTextEdit')
     expect(body).toContain('__helmInstallPoint')
+    // FIX 5: a <base href> so the app's root-relative URLs resolve under the proxy.
+    expect(body).toContain('<base href="/preview/p1/">')
+    // FIX 1: the point-capture relay forwards the click geometry+selector to the parent.
+    expect(body).toContain('helm:point-capture')
     expect(body).toContain('Hi') // original content preserved
 
     const js = await fetch(`http://127.0.0.1:${server.port}/preview/p1/app.js`)

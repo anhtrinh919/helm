@@ -169,26 +169,17 @@ describe('PointCaptureService — inline text edit', () => {
     expect(service.isTextEditActive('p1')).toBe(false)
   })
 
-  it('a committed inline edit yields a pending text edit (selector + old/new text)', async () => {
-    const { service, guest } = makeService()
+  it('main ignores the inline-edit console line (selectors are request-carried)', async () => {
+    // Inline-edit selectors travel renderer→core in points:register-text-edit, so
+    // the `__HELM_TEXTEDIT__` console line is intentionally NOT consumed in main.
+    // The only observable effect is that no capture/exit callbacks fire.
+    const { service, guest, captures, exits } = makeService()
     service.activateTextEdit('p1')
     guest.emitConsole(textEditLine('New label'))
-    await vi.waitFor(() =>
-      expect(service.consumePendingTextEdit('p1')).not.toBeNull(),
-    )
-  })
-
-  it('consumePendingTextEdit returns the captured fields once then clears', async () => {
-    const { service, guest } = makeService()
-    service.activateTextEdit('p1')
-    guest.emitConsole(textEditLine('New label', 'Old label'))
-    let pending: ReturnType<typeof service.consumePendingTextEdit> = null
-    await vi.waitFor(() => {
-      pending = service.consumePendingTextEdit('p1')
-      expect(pending).not.toBeNull()
-    })
-    expect(pending).toEqual({ selector: 'main > h1', oldText: 'Old label', newText: 'New label' })
-    expect(service.consumePendingTextEdit('p1')).toBeNull()
+    await new Promise((r) => setTimeout(r, 10))
+    expect(captures).toHaveLength(0)
+    expect(exits).toHaveLength(0)
+    expect(service.isTextEditActive('p1')).toBe(true)
   })
 
   it('deactivateTextEdit tears down the editor and stops listening', async () => {
@@ -197,17 +188,7 @@ describe('PointCaptureService — inline text edit', () => {
     service.deactivateTextEdit('p1')
     expect(guest.injected).toEqual([TEXT_EDIT_INSTALL_SCRIPT, TEXT_EDIT_REMOVE_SCRIPT])
     expect(guest.consoleSubscribers).toBe(0)
-    guest.emitConsole(textEditLine('Late'))
-    await new Promise((r) => setTimeout(r, 10))
-    expect(service.consumePendingTextEdit('p1')).toBeNull()
-  })
-
-  it('malformed text-edit output is ignored', async () => {
-    const { service, guest } = makeService()
-    service.activateTextEdit('p1')
-    guest.emitConsole('__HELM_TEXTEDIT__{not json')
-    await new Promise((r) => setTimeout(r, 10))
-    expect(service.consumePendingTextEdit('p1')).toBeNull()
+    expect(service.isTextEditActive('p1')).toBe(false)
   })
 
   it('a guest reload tears down active point + text-edit modes (mid-edit cleanup)', () => {

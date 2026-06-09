@@ -77,20 +77,33 @@ export function registerPointsBridge(db: Db, deps: PointsBridgeDeps = {}): void 
         throw new PreviewNotLiveError('point-and-fix needs a running app')
       }
 
-      // Element-level comments are identified by their geometry. The renderer
-      // never holds the selector/screenshot — those exist only in main's
-      // pending capture, merged here.
+      // Element-level comments are identified by their geometry. On the Electron
+      // path the renderer never holds the selector/screenshot — those exist only
+      // in main's pending capture, merged here. On the browser-proxy path the
+      // same-origin proxy already exposed the selector, so it arrives in the
+      // request (req.selector); when present we anchor to it directly and SKIP the
+      // pending-capture merge (there is no main-side capture in the browser path).
       const isElement = req.pinX != null || req.boundingBox != null
-      const pending = capture?.consumePending(req.projectId) ?? null
-      const visual = isElement
-        ? {
-            selector: pending?.selector ?? undefined,
-            boundingBox: req.boundingBox ?? pending?.boundingBox ?? undefined,
-            screenshotCrop: pending?.screenshotCrop ?? undefined,
-            pinX: req.pinX ?? pending?.pinX ?? undefined,
-            pinY: req.pinY ?? pending?.pinY ?? undefined,
-          }
-        : {}
+      const browserSelector = req.selector?.trim()
+      const visual = !isElement
+        ? {}
+        : browserSelector
+          ? {
+              selector: browserSelector,
+              boundingBox: req.boundingBox ?? undefined,
+              pinX: req.pinX ?? undefined,
+              pinY: req.pinY ?? undefined,
+            }
+          : (() => {
+              const pending = capture?.consumePending(req.projectId) ?? null
+              return {
+                selector: pending?.selector ?? undefined,
+                boundingBox: req.boundingBox ?? pending?.boundingBox ?? undefined,
+                screenshotCrop: pending?.screenshotCrop ?? undefined,
+                pinX: req.pinX ?? pending?.pinX ?? undefined,
+                pinY: req.pinY ?? pending?.pinY ?? undefined,
+              }
+            })()
 
       const bare = createCard(db, req.projectId, 'fix_comment', req.note, 'user_added', 'waiting')
       createFixComment(db, {

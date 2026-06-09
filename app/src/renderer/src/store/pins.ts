@@ -22,6 +22,10 @@ export interface LockedCapture {
   pinY: number
   /** Whether the captured element contains visible text (drives dual-choice vs single-choice popover). */
   isTextElement?: boolean
+  /** BROWSER-PROXY PATH ONLY: the selector the proxy exposed via `helm:point-capture`.
+   *  Carried back to core in points:register so the browser path can anchor the
+   *  fix without a main-side pending capture (the Electron path leaves this undefined). */
+  selector?: string
 }
 
 /** The in-place text-edit state for a single project. */
@@ -175,7 +179,14 @@ export const usePointFix = create<PointFixStore>((set, get) => ({
       note,
       noteType,
       ...(capture
-        ? { boundingBox: capture.boundingBox, pinX: capture.pinX, pinY: capture.pinY }
+        ? {
+            boundingBox: capture.boundingBox,
+            pinX: capture.pinX,
+            pinY: capture.pinY,
+            // Browser-proxy path: forward the proxy-exposed selector so core can
+            // anchor the fix without a pending capture. undefined on Electron.
+            ...(capture.selector ? { selector: capture.selector } : {}),
+          }
         : {}),
     })
     if (isIpcError(res)) return false

@@ -66,7 +66,34 @@ function noopPointCapture(devServer: DevServerManager): PointCaptureDeps {
   }
 }
 
+/**
+ * Single-core-per-process guard. The transport `bus` is a module-level singleton
+ * (see transport.ts) — a second core in the same process would share its handlers
+ * and push clients, causing silent cross-talk. Booting twice is a programming
+ * error, so we fail loud and early rather than degrade silently. Cleared by the
+ * returned `close()`.
+ */
+let coreRunning = false
+
 export async function startCore(opts: CoreOptions): Promise<RunningCore> {
+  if (coreRunning) {
+    throw new Error(
+      'startCore: a core is already running in this process. Only one core may run per process ' +
+        '(the transport bus is a module-level singleton). Close the existing core before starting another.',
+    )
+  }
+  coreRunning = true
+  try {
+    return await bootCore(opts)
+  } catch (e) {
+    // Boot failed before a `close()` could be returned — release the guard so a
+    // retry isn't permanently locked out.
+    coreRunning = false
+    throw e
+  }
+}
+
+async function bootCore(opts: CoreOptions): Promise<RunningCore> {
   // DB + migrations must run before any bridge is registered.
   const db: Db = openDatabase(join(opts.dataDir, 'helm.db'))
   recoverActiveSessions(db, Date.now())
@@ -130,6 +157,7 @@ export async function startCore(opts: CoreOptions): Promise<RunningCore> {
     close: async () => {
       devServer.clearAllPids()
       await server.close()
+      coreRunning = false
     },
   }
 }

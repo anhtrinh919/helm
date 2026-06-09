@@ -195,22 +195,44 @@ describe('points:register', () => {
     expect(fix.screenshotCrop).toBe('Y3JvcA==')
   })
 
-  it('a renderer-supplied selector/screenshot is structurally impossible (schema strips it)', async () => {
+  it('browser-proxy path: an explicit request selector anchors the fix without a pending capture', async () => {
     await goLive()
-    // No guest click happened — even a malicious/buggy renderer sending these
-    // fields cannot land them: the schema has no such fields to parse.
+    // No guest click happened — there is NO main-side pending capture. The browser
+    // proxy path carries the proxy-exposed selector in the request directly, and
+    // the bridge anchors to it (FIX 1). The screenshot crop is still impossible to
+    // supply from the renderer (no such schema field).
     const res = await call(CH.pointsRegister, {
       projectId,
-      selector: 'main > button#evil',
-      screenshotCrop: 'ZXZpbA==',
+      selector: 'main > button#browser',
+      screenshotCrop: 'ZXZpbA==', // not a schema field — silently dropped
       boundingBox: RECT,
       pinX: 0.42,
       pinY: 0.61,
-      note: 'Sneaky payload',
+      note: 'Browser-path fix',
       noteType: 'bug',
     })
     const fix = getFixComment(db, res.card.id)
-    expect(fix.selector).toBeNull()
+    expect(fix.selector).toBe('main > button#browser')
+    expect(fix.screenshotCrop).toBeNull()
+  })
+
+  it('the request selector skips the main-side pending-capture merge', async () => {
+    await goLive()
+    // Even if a pending Electron capture exists, an explicit request selector
+    // wins and the pending capture is NOT consumed (browser path is self-contained).
+    await clickGuest('main > button#submit') // leaves a pending capture in main
+    const res = await call(CH.pointsRegister, {
+      projectId,
+      selector: 'section > h2',
+      boundingBox: RECT,
+      pinX: 0.42,
+      pinY: 0.61,
+      note: 'Explicit selector wins',
+      noteType: 'change',
+    })
+    const fix = getFixComment(db, res.card.id)
+    expect(fix.selector).toBe('section > h2')
+    // The pending capture was left untouched (no screenshot merged in).
     expect(fix.screenshotCrop).toBeNull()
   })
 

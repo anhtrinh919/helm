@@ -8,9 +8,16 @@ import type { BoundingBox } from '../../shared/ipc-schemas'
  * plain DOM code and reports back over a prefix-guarded console channel, so the
  * user's built app stays fully sandboxed.
  *
- * The selector and screenshot NEVER leave the main process: the renderer is
- * told only the geometry (for anchoring the comment box), and `points:register`
- * merges the pending capture server-side.
+ * SELECTOR ASYMMETRY (documented honestly): point-capture's selector + screenshot
+ * NEVER leave the main process — the renderer is told only the geometry (for
+ * anchoring the comment box), and `points:register` merges the main-side pending
+ * capture. Inline TEXT-EDIT is different by necessity: the browser-proxy path
+ * surfaces the edited element's selector to the renderer (the same-origin proxy
+ * exposes it), so inline-edit selectors are request-carried (renderer→core) in
+ * `points:register-text-edit`, UNLIKE point-capture's main-only selector. The
+ * browser point-capture path likewise carries its selector in the request (an
+ * optional field on `points:register`); the Electron point-capture path keeps the
+ * main-only pending-capture merge unchanged.
  */
 
 /** What a click in the guest produces. Internal to main. */
@@ -64,20 +71,6 @@ interface GuestClickPayload {
   rect: BoundingBox
   px: number
   py: number
-}
-
-/** Raw payload the inline-edit script logs on commit. */
-interface GuestTextEditPayload {
-  selector: string
-  oldText: string
-  newText: string
-}
-
-/** What an in-place text edit produces. Internal to main. */
-export interface TextEditCapture {
-  selector: string
-  oldText: string
-  newText: string
 }
 
 export const INSTALL_SCRIPT = `(() => {
@@ -284,9 +277,11 @@ export class PointCaptureService {
   private active = new Map<string, ActiveCapture>()
   /** The last locked capture per project, waiting for its points:register. */
   private pending = new Map<string, ElementCapture>()
-  /** Inline text-edit mode, mirroring `active`/`pending` above. */
+  /** Inline text-edit mode. Only the install/remove lifecycle lives in main; the
+   *  edited selector + text are carried renderer→core in points:register-text-edit
+   *  (see the SELECTOR ASYMMETRY note in the header), so there is no main-side
+   *  pending edit to track. */
   private textEditActive = new Map<string, ActiveCapture>()
-  private pendingTextEdit = new Map<string, TextEditCapture>()
 
   constructor(
     private deps: PointCaptureDeps,
@@ -344,20 +339,11 @@ export class PointCaptureService {
       this.onExit(projectId)
       return
     }
-    if (line.startsWith(TEXTEDIT_PREFIX)) {
-      let payload: GuestTextEditPayload
-      try {
-        payload = JSON.parse(line.slice(TEXTEDIT_PREFIX.length)) as GuestTextEditPayload
-      } catch {
-        return // malformed guest output — ignore, never crash edit mode
-      }
-      this.pendingTextEdit.set(projectId, {
-        selector: payload.selector,
-        oldText: payload.oldText,
-        newText: payload.newText,
-      })
-      return
-    }
+    // Note: the inline-edit script also logs `__HELM_TEXTEDIT__…`, but main does
+    // NOT consume it — inline-edit selectors are request-carried (renderer→core),
+    // so that console line is intentionally ignored here. The browser-proxy relay
+    // forwards the commit to the renderer via postMessage instead.
+    if (line.startsWith(TEXTEDIT_PREFIX)) return
     if (!line.startsWith(POINT_PREFIX)) return
     let payload: GuestClickPayload
     try {
@@ -408,15 +394,7 @@ export class PointCaptureService {
     const entry = this.textEditActive.get(projectId)
     if (!entry) return
     this.textEditActive.delete(projectId)
-    this.pendingTextEdit.delete(projectId)
     entry.unsubscribe()
     void entry.view.executeJavaScript(TEXT_EDIT_REMOVE_SCRIPT)
-  }
-
-  /** Hand the last committed inline edit to points:register-text-edit and clear it. */
-  consumePendingTextEdit(projectId: string): TextEditCapture | null {
-    const capture = this.pendingTextEdit.get(projectId) ?? null
-    this.pendingTextEdit.delete(projectId)
-    return capture
   }
 }

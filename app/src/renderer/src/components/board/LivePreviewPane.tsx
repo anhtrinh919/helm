@@ -1,7 +1,7 @@
 import { createElement, useEffect, useRef, useState } from 'react'
 import { Icon } from '../ui/Icon'
 import type { PreviewState } from '@shared/ipc-schemas'
-import { isMock } from '../../bridge'
+import { helm, isMock } from '../../bridge'
 import { usePreview } from '../../store/preview'
 import { PointAnnotations } from './PointModeOverlay'
 
@@ -136,24 +136,37 @@ function Embed({
   const className = `absolute inset-0 h-full w-full border-0 ${muted ? 'pointer-events-none' : ''}`
   const style = muted ? { display: 'flex', opacity: 0.4, filter: 'saturate(0.7)' } : { display: 'flex' }
 
-  useEffect(() => {
-    const el = ref.current
-    if (!el || !onFail) return
-    const handler = (): void => onFail()
-    el.addEventListener('did-fail-load', handler)
-    el.addEventListener('error', handler)
-    return () => {
-      el.removeEventListener('did-fail-load', handler)
-      el.removeEventListener('error', handler)
-    }
-  }, [onFail, url])
-
   // Electron shell: a <webview> guest the core injects capture/edit into.
   // Plain browser (hybrid dogfood): the <webview> tag renders nothing, so load
   // the running app through the core's same-origin preview proxy instead, which
   // serves it under /preview/<projectId>/ with the capture/edit bridge injected.
   const isElectron =
     typeof navigator !== 'undefined' && /Electron/i.test(navigator.userAgent)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const cleanups: Array<() => void> = []
+    if (onFail) {
+      const handler = (): void => onFail()
+      el.addEventListener('did-fail-load', handler)
+      el.addEventListener('error', handler)
+      cleanups.push(() => {
+        el.removeEventListener('did-fail-load', handler)
+        el.removeEventListener('error', handler)
+      })
+    }
+    // Browser-proxy path: a reload of the proxied iframe destroys any injected
+    // inline editor, so tear down text-edit mode on the core side. This is the
+    // browser counterpart of the Electron onGuestReload hook (which has no browser
+    // equivalent). Skipped under mock + Electron (the latter uses onGuestReload).
+    if (!muted && !isMock && !isElectron) {
+      const onLoad = (): void => void helm.points.deactivateTextEdit(projectId)
+      el.addEventListener('load', onLoad)
+      cleanups.push(() => el.removeEventListener('load', onLoad))
+    }
+    return () => cleanups.forEach((c) => c())
+  }, [onFail, url, muted, isElectron, projectId])
 
   if (isMock || !isElectron) {
     const src = isMock ? url : `/preview/${projectId}/`

@@ -17,13 +17,15 @@ import { Icon } from '../ui/Icon'
  * - commit flows through registerTextEdit
  * - double-submit guard: same selector blocked until its card appears
  *
- * Browser-proxy path: the HELM_PREVIEW_BRIDGE relay patch sends a postMessage
- * on commit; this overlay intercepts it and calls commitTextEdit.
- * Electron path: same-origin webview + main-process console interception +
- * pendingTextEdit — the renderer still needs the commit postMessage path, which
- * the webview does NOT send (gap: Electron text-edit commit requires a new push
- * channel not yet present; the overlay gracefully falls back to a "reload"
- * message in that case).
+ * Browser-proxy path: the HELM_PREVIEW_BRIDGE relay patches send postMessages —
+ * `helm:text-edit-commit` on inline-edit commit and `helm:point-capture` on a
+ * point click; this overlay intercepts both (origin-gated) and calls
+ * commitTextEdit / lockCapture, carrying the proxy-exposed selector to the core.
+ * Electron path: same-origin <webview> + main-process console interception. Point
+ * capture arrives via the onPointCapture push (geometry only; selector stays in
+ * main). Inline-edit commit over the <webview> has no postMessage equivalent yet
+ * (it does not cross into the renderer), so the Electron inline-edit path is
+ * browser-only today — documented honestly rather than papered over.
  */
 
 const FALSE_DEFAULT = false as const
@@ -380,9 +382,11 @@ export function PointAnnotations({ projectId }: { projectId: string }): React.JS
   // Listen for text-edit commit messages from the same-origin proxied iframe
   // (browser-proxy path). The HELM_PREVIEW_BRIDGE relay patch sends:
   // { type: 'helm:text-edit-commit', selector, oldText, newText }
+  // Origin-gated: only accept messages from our own (same) origin.
   useEffect(() => {
     if (!textEditState || textEditState.phase !== 'armed') return
     const onMessage = (e: MessageEvent): void => {
+      if (e.origin !== window.location.origin) return
       if (
         e.data &&
         typeof e.data === 'object' &&
@@ -400,6 +404,35 @@ export function PointAnnotations({ projectId }: { projectId: string }): React.JS
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
   }, [textEditState, projectId, commitTextEdit])
+
+  // Listen for point-capture messages from the same-origin proxied iframe
+  // (browser-proxy path). The POINT_CAPTURE_RELAY_PATCH sends:
+  // { type: 'helm:point-capture', selector, rect, px, py }. We lock the capture
+  // with the geometry AND the proxy-exposed selector, so register() can anchor
+  // the fix directly. Electron uses the main-process onPointCapture push instead.
+  // Origin-gated. Only armed while point mode is on, not yet captured, and not in
+  // text-edit mode.
+  useEffect(() => {
+    if (!pointMode || capture || textEditState) return
+    const onMessage = (e: MessageEvent): void => {
+      if (e.origin !== window.location.origin) return
+      const data = e.data as Record<string, unknown> | null
+      if (!data || typeof data !== 'object' || data.type !== 'helm:point-capture') return
+      const rect = data.rect as BoundingBox | undefined
+      const px = data.px as number | undefined
+      const py = data.py as number | undefined
+      if (!rect || px == null || py == null) return
+      lock(projectId, {
+        boundingBox: rect,
+        pinX: px,
+        pinY: py,
+        isTextElement: true,
+        selector: typeof data.selector === 'string' ? data.selector : undefined,
+      })
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [pointMode, capture, textEditState, projectId, lock])
 
   // Reset showCommentBox when capture is cleared
   useEffect(() => {
