@@ -1,5 +1,5 @@
 import { tmpdir } from 'node:os'
-import type { BrowserWindow } from 'electron'
+import type { HelmWindow } from '../core/transport'
 import type { Card, FeedEvent, Session, SteerMode } from '../../shared/ipc-schemas'
 import { CH } from '../../shared/ipc-schemas'
 import type { Db } from '../db/connection'
@@ -38,7 +38,7 @@ import {
   type StartSessionOptions,
 } from './session-runner'
 
-type GetWindow = () => BrowserWindow | null
+type GetWindow = () => HelmWindow | null
 type Runner = (opts: StartSessionOptions, cb: SessionCallbacks) => SessionHandle
 
 /**

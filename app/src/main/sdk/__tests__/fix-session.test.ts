@@ -5,16 +5,18 @@ import type { SessionCallbacks, SessionHandle, StartSessionOptions } from '../se
 /**
  * Group 4 — fix-session orchestration: register a point, start a fix (or queue
  * it), approve → preview restart + queue advance, reject → same session retries.
- * Drives the real IPC handlers with electron mocked, the same harness as the
- * contract-flow suite.
+ * Drives the real helm handlers over the hybrid-runtime transport bus, the same
+ * harness as the contract-flow suite.
  */
 
-const { handlers } = vi.hoisted(() => ({
-  handlers: new Map<string, (e: unknown, raw: unknown) => unknown>(),
-}))
-vi.mock('electron', () => ({
-  ipcMain: { handle: (ch: string, fn: (e: unknown, raw: unknown) => unknown) => handlers.set(ch, fn) },
-}))
+import { bus } from '../../core/transport'
+
+/** Bus-backed stand-in for the old electron `handlers` map (has/get/clear). */
+const handlers = {
+  has: (ch: string): boolean => bus.has(ch),
+  get: (ch: string) => (_e: unknown, raw: unknown) => bus.invoke(ch, raw),
+  clear: (): void => bus.reset(),
+}
 
 import { openDatabase, type Db } from '../../db/connection'
 import { createProject } from '../../db/projects'

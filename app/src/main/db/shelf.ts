@@ -42,9 +42,15 @@ export function addShelfItem(
   return toShelfItem(row)
 }
 
-export function removeShelfItem(db: Db, itemId: string): void {
-  const res = db.prepare(`DELETE FROM shelf_items WHERE id = ?`).run(itemId)
-  if (res.changes === 0) throw new NotFoundError('shelf item not found')
+/** Dismiss a parked item. Returns the item's project id so the caller can push
+ *  the refreshed shelf list to the right project. */
+export function removeShelfItem(db: Db, itemId: string): string {
+  const row = db.prepare(`SELECT project_id FROM shelf_items WHERE id = ?`).get(itemId) as
+    | { project_id: string }
+    | undefined
+  if (!row) throw new NotFoundError('shelf item not found')
+  db.prepare(`DELETE FROM shelf_items WHERE id = ?`).run(itemId)
+  return row.project_id
 }
 
 /** Promote a parked item to a real board card (atomic: card created, item removed).

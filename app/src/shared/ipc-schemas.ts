@@ -526,6 +526,17 @@ export const RemoveShelfItemRequest = z.object({
 })
 export type RemoveShelfItemRequest = z.infer<typeof RemoveShelfItemRequest>
 
+/** Inline text edit (Group 5): point at text in the live app and edit it in place. */
+export const RegisterTextEditRequest = z.object({
+  projectId: z.string(),
+  selector: z.string().min(1),
+  oldText: z.string(),
+  newText: z.string(),
+})
+export type RegisterTextEditRequest = z.infer<typeof RegisterTextEditRequest>
+
+export const TextEditModeRequest = z.object({ projectId: z.string() })
+
 /** Wizard UI state blob — renderer-shaped, persisted opaquely on the project row. */
 export const SaveWizardStateRequest = z.object({
   projectId: z.string(),
@@ -589,10 +600,14 @@ export const CH = {
   sessionsStop: 'sessions:stop',
   wizardSaveState: 'wizard:save-state',
   wizardGetState: 'wizard:get-state',
-  // Phase 1: outcome + reorder + shelf-remove (constants only — no bridge/endpoint wired yet)
+  // Phase 1: outcome + reorder + shelf-remove
   cardsSetOutcome: 'cards:set-outcome',
   projectsReorder: 'projects:reorder',
   shelfRemove: 'shelf:remove',
+  // Phase 1 (Group 5): inline text edit in the live app
+  pointsTextEditActivate: 'points:text-edit-activate',
+  pointsTextEditDeactivate: 'points:text-edit-deactivate',
+  pointsRegisterTextEdit: 'points:register-text-edit',
   // pushes
   feedEvent: 'feed:event',
   boardUpdate: 'board:update',

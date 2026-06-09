@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow } from 'electron'
+import { ipcMain, type HelmWindow } from '../core/transport'
 import { ZodError } from 'zod'
 import {
   CH,
@@ -42,7 +42,7 @@ export interface PointsBridgeDeps {
   capture?: PointCaptureService
   devServer?: DevServerManager
   orchestrator?: SessionOrchestrator
-  getWindow?: () => BrowserWindow | null
+  getWindow?: () => HelmWindow | null
 }
 
 /** Point-and-fix IPC (Phase 3): file comments, list pins, start fixes, drive

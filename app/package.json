@@ -11,7 +11,9 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
+    "core": "tsx src/main/core/dev-entry.ts",
     "web": "vite --config vite.web.config.ts",
+    "dev:web": "tsx src/main/core/dev-entry.ts & vite --config vite.web.config.ts",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "verify:group-1": "bash verify-group-1.sh",
     "verify:group-2": "bash verify-group-2.sh",
@@ -20,6 +22,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.162",
     "better-sqlite3": "11.8.1",
+    "ws": "8.18.0",
     "zod": "4.4.3",
     "zustand": "5.0.2"
   },
@@ -30,6 +33,7 @@
     "@types/node": "22.10.5",
     "@types/react": "19.0.2",
     "@types/react-dom": "19.0.2",
+    "@types/ws": "8.5.13",
     "@vitejs/plugin-react": "4.3.4",
     "electron": "33.2.1",
     "electron-vite": "2.3.0",

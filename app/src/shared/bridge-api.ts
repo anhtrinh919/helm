@@ -19,6 +19,7 @@ import type {
   QuestionQueueItem,
   QuestionUpdatePush,
   RegisterPointRequest,
+  RegisterTextEditRequest,
   Session,
   ShelfItem,
   ShelfUpdatePush,
@@ -44,6 +45,8 @@ export interface HelmApi {
     setMode(projectId: string, mode: ProjectMode): Promise<Result<{ project: Project }>>
     /** Advance the Build rail; step === plan length triggers the celebration. */
     setRailStep(projectId: string, step: number): Promise<Result<{ project: Project }>>
+    /** Persist a new project order (full ordered id list). Phase 1 project management. */
+    reorder(orderedIds: string[]): Promise<Result<{ ok: true }>>
   }
   /** Phase 4 "For later" shelf — parked mid-rail requests. */
   shelf: {
@@ -51,6 +54,8 @@ export interface HelmApi {
     add(projectId: string, title: string): Promise<Result<{ item: ShelfItem }>>
     /** Move a parked item onto the board as a real card. */
     promote(itemId: string, projectId: string): Promise<Result<{ card: Card }>>
+    /** Dismiss a parked item without promoting it. */
+    remove(itemId: string, projectId: string): Promise<Result<{ ok: true }>>
   }
   /** Phase 4 import — bring an existing AI-built local web app into Helm. */
   import: {
@@ -70,6 +75,8 @@ export interface HelmApi {
       verdict: 'approved' | 'flagged',
       flagNote?: string,
     ): Promise<Result<{ card: Card }>>
+    /** Edit a card's plain-language outcome later (plan approval is the primary write). */
+    setOutcome(cardId: string, outcome: string): Promise<Result<{ ok: true }>>
   }
   sessions: {
     /** Open (or resume) the scoped session for a card. Starts a live SDK build. */
@@ -129,6 +136,11 @@ export interface HelmApi {
     activate(projectId: string): Promise<Result<{ ok: true }>>
     /** Turn point mode off: main removes the capture listener. */
     deactivate(projectId: string): Promise<Result<{ ok: true }>>
+    /** Group 5: arm in-place text editing of the pointed element in the live app. */
+    activateTextEdit(projectId: string): Promise<Result<{ ok: true }>>
+    deactivateTextEdit(projectId: string): Promise<Result<{ ok: true }>>
+    /** Register an in-place text edit; spawns a fix session for the element. */
+    registerTextEdit(req: RegisterTextEditRequest): Promise<Result<{ card: Card }>>
   }
   fixSessions: {
     /** Start the fix for a comment card — or queue it behind the running fix. */

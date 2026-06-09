@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ipcMain } from 'electron'
+import { ipcMain } from '../core/transport'
 import { ZodError } from 'zod'
 import {
   CH,

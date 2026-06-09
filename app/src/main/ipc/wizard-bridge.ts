@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow } from 'electron'
+import { ipcMain, type HelmWindow } from '../core/transport'
 import { ZodError } from 'zod'
 import {
   CH,
@@ -28,7 +28,7 @@ import {
   type WizardOrchestrator,
 } from '../sdk/wizard-orchestrator'
 
-type GetWindow = () => BrowserWindow | null
+type GetWindow = () => HelmWindow | null
 
 function mapError(e: unknown): IpcError {
   if (e instanceof SdkInitError) return { error: 'sdk_init_failed', message: e.message }

@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow } from 'electron'
+import { ipcMain, type HelmWindow } from '../core/transport'
 import { ZodError } from 'zod'
 import { startSession, SdkInitError } from '../sdk/session-runner'
 import { transform, makeFeedEvent } from '../sdk/event-transformer'
@@ -14,7 +14,7 @@ import { CH, StartProbeRequest, GetFeedRequest, type IpcError } from '../../shar
  * nothing. Every payload is Zod-validated and every handler returns a typed error.
  */
 
-type GetWindow = () => BrowserWindow | null
+type GetWindow = () => HelmWindow | null
 
 function mapError(e: unknown): IpcError {
   if (e instanceof SdkInitError) return { error: 'sdk_init_failed', message: e.message }

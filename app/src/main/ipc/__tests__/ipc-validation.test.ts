@@ -1,23 +1,23 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { describe, expect, it, beforeEach } from 'vitest'
 import type { SessionCallbacks, SessionHandle, StartSessionOptions } from '../../sdk/session-runner'
 
 /**
- * Group 8 integration hardening: every IPC handler must validate its payload at
+ * Group 8 integration hardening: every helm handler must validate its payload at
  * the Zod boundary and return a typed { error } response — never throw across the
- * IPC boundary. We mock electron so ipcMain.handle captures the handlers, mount
- * every bridge, then fire malformed payloads at every channel and assert no throw
- * and a typed error. This is the test that caught the un-try/catch'd feed bridge.
+ * bridge. The hybrid runtime registers handlers on the shared transport bus; we
+ * mount every bridge, then fire malformed payloads at every channel and assert no
+ * throw and a typed error. This is the test that caught the un-try/catch'd feed
+ * bridge.
  */
 
-const { handlers } = vi.hoisted(() => ({
-  handlers: new Map<string, (e: unknown, raw: unknown) => unknown>(),
-}))
-
-vi.mock('electron', () => ({
-  ipcMain: { handle: (ch: string, fn: (e: unknown, raw: unknown) => unknown) => handlers.set(ch, fn) },
-}))
-
+import { bus } from '../../core/transport'
 import { openDatabase, type Db } from '../../db/connection'
+
+/** Reach the registered handlers through the bus (replaces the old electron mock). */
+const handlers = {
+  has: (ch: string): boolean => bus.has(ch),
+  get: (ch: string) => (_e: unknown, raw: unknown) => bus.invoke(ch, raw),
+}
 import { SessionOrchestrator } from '../../sdk/session-orchestrator'
 import { WizardOrchestrator } from '../../sdk/wizard-orchestrator'
 import { registerFeedBridge } from '../feed-bridge'
@@ -54,7 +54,7 @@ const PARAM_CHANNELS = [
 
 let db: Db
 beforeEach(() => {
-  handlers.clear()
+  bus.reset()
   db = openDatabase(':memory:')
   const sessionOrch = new SessionOrchestrator(db, () => null, fakeRunner)
   const wizardOrch = new WizardOrchestrator(db, fakeRunner)

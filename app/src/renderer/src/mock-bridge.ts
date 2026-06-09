@@ -366,6 +366,10 @@ export function createMockBridge(): HelmApi {
         if (!project) return { error: 'not_found' }
         return { project, cards: cards[projectId] ?? [] }
       },
+      reorder: async (orderedIds) => {
+        projects.sort((a, b) => orderedIds.indexOf(a.id) - orderedIds.indexOf(b.id))
+        return { ok: true as const }
+      },
     },
     cards: {
       create: async (projectId, type, title) => {
@@ -449,6 +453,15 @@ export function createMockBridge(): HelmApi {
           pushBoard(c)
         }
         return { card: c }
+      },
+      setOutcome: async (cardId, outcome) => {
+        const c = findCard(cardId)
+        if (!c) return { error: 'card_not_found' }
+        const trimmed = outcome.trim()
+        if (trimmed.length === 0 || trimmed.length > 500) return { error: 'invalid_input' }
+        c.outcome = trimmed
+        pushBoard(c)
+        return { ok: true as const }
       },
     },
     sessions: {
@@ -539,6 +552,7 @@ export function createMockBridge(): HelmApi {
       list: async () => ({ items: [] }),
       add: async () => ({ error: 'mock_unsupported' }),
       promote: async () => ({ error: 'mock_unsupported' }),
+      remove: async () => ({ ok: true as const }),
     },
     import: {
       scan: async () => ({ found: false as const }),
@@ -646,6 +660,9 @@ export function createMockBridge(): HelmApi {
       }),
       activate: async () => ({ ok: true as const }),
       deactivate: async () => ({ ok: true as const }),
+      activateTextEdit: async () => ({ ok: true as const }),
+      deactivateTextEdit: async () => ({ ok: true as const }),
+      registerTextEdit: async () => ({ error: 'mock_unsupported' }),
     },
     fixSessions: {
       start: async (projectId, cardId) => {

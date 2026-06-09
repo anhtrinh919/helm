@@ -1,18 +1,19 @@
-import { ipcMain, type BrowserWindow } from 'electron'
+import { ipcMain, type HelmWindow } from '../core/transport'
 import { ZodError } from 'zod'
 import {
   CH,
   ShelfAddRequest,
   ShelfListRequest,
   ShelfPromoteRequest,
+  RemoveShelfItemRequest,
   type Card,
   type IpcError,
 } from '../../shared/ipc-schemas'
 import type { Db } from '../db/connection'
 import { NotFoundError } from '../db/errors'
-import { addShelfItem, listShelfItems, promoteShelfItem } from '../db/shelf'
+import { addShelfItem, listShelfItems, promoteShelfItem, removeShelfItem } from '../db/shelf'
 
-type GetWindow = () => BrowserWindow | null
+type GetWindow = () => HelmWindow | null
 
 function mapError(e: unknown): IpcError {
   if (e instanceof NotFoundError) return { error: 'not_found' }
@@ -67,6 +68,19 @@ export function registerShelfBridge(db: Db, getWindow: GetWindow): void {
       }
       return { card }
     } catch (e) {
+      return mapError(e)
+    }
+  })
+
+  // Phase 1: dismiss a parked item (no board card). Pushes the refreshed list.
+  ipcMain.handle(CH.shelfRemove, (_e, raw: unknown) => {
+    try {
+      const { itemId } = RemoveShelfItemRequest.parse(raw)
+      const projectId = removeShelfItem(db, itemId)
+      pushShelf(projectId)
+      return { ok: true as const }
+    } catch (e) {
+      if (e instanceof NotFoundError) return { error: 'not_found' }
       return mapError(e)
     }
   })

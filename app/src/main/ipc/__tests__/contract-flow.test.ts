@@ -1,20 +1,15 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { describe, expect, it, beforeEach } from 'vitest'
 import type { SessionCallbacks, SessionHandle, StartSessionOptions } from '../../sdk/session-runner'
 
 /**
- * Stage 4 integration: drive valid end-to-end flows through the IPC boundary and
+ * Stage 4 integration: drive valid end-to-end flows through the helm bridge and
  * assert each handler returns the exact shape requirements.md promises — success
  * payloads and the contract's reachable error codes. Complements the malformed-
  * payload fuzzing in ipc-validation.test.ts (this is the happy + typed-error path).
+ * Handlers register on the hybrid-runtime transport bus.
  */
 
-const { handlers } = vi.hoisted(() => ({
-  handlers: new Map<string, (e: unknown, raw: unknown) => unknown>(),
-}))
-vi.mock('electron', () => ({
-  ipcMain: { handle: (ch: string, fn: (e: unknown, raw: unknown) => unknown) => handlers.set(ch, fn) },
-}))
-
+import { bus } from '../../core/transport'
 import { openDatabase, type Db } from '../../db/connection'
 import { SessionOrchestrator } from '../../sdk/session-orchestrator'
 import { WizardOrchestrator } from '../../sdk/wizard-orchestrator'
@@ -39,12 +34,12 @@ function fakePreviewDeps(): DevServerDeps {
 function fakeRunner(_o: StartSessionOptions, _cb: SessionCallbacks): SessionHandle {
   return { id: 'fake', steer: async () => {}, reply: () => {}, close: async () => {} }
 }
-const call = async (ch: string, payload?: unknown): Promise<any> => handlers.get(ch)!({}, payload)
+const call = async (ch: string, payload?: unknown): Promise<any> => bus.invoke(ch, payload)
 
 let db: Db
 let previewServer: DevServerManager
 beforeEach(() => {
-  handlers.clear()
+  bus.reset()
   db = openDatabase(':memory:')
   previewServer = new DevServerManager(db, () => {}, fakePreviewDeps(), '/tmp/helm-contract')
   registerFeedBridge(db, () => null)

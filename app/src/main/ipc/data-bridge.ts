@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow } from 'electron'
+import { ipcMain, type HelmWindow } from '../core/transport'
 import { ZodError } from 'zod'
 import {
   CH,
@@ -7,6 +7,7 @@ import {
   CreateCardRequest,
   UpdateCardStatusRequest,
   ApproveCheckpointRequest,
+  SetCardOutcomeRequest,
   type Card,
   type IpcError,
 } from '../../shared/ipc-schemas'
@@ -24,10 +25,11 @@ import {
   updateCardStatus,
   updateCheckpoint,
   promoteNextPlanned,
+  setCardOutcome,
 } from '../db/cards'
 import type { SessionOrchestrator } from '../sdk/session-orchestrator'
 
-type GetWindow = () => BrowserWindow | null
+type GetWindow = () => HelmWindow | null
 
 /** Phase 3 hook for fix-comment checkpoints — the orchestrator owns the whole
  *  outcome (preview refresh, pin resolution, queue advance, reject-retry). */
@@ -131,4 +133,19 @@ export function registerDataBridge(db: Db, getWindow: GetWindow, fix?: FixCheckp
     }
   })
 
+  // Phase 1: edit a card's plain-language outcome (plan approval is the primary write).
+  ipcMain.handle(CH.cardsSetOutcome, (_e, raw: unknown) => {
+    try {
+      const { cardId, outcome } = SetCardOutcomeRequest.parse(raw)
+      const trimmed = outcome.trim()
+      if (trimmed.length === 0 || trimmed.length > 500) return { error: 'invalid_input' }
+      const card = setCardOutcome(db, cardId, trimmed)
+      pushBoard(card.projectId, card)
+      return { ok: true as const }
+    } catch (e) {
+      if (e instanceof NotFoundError) return { error: 'card_not_found' }
+      if (e instanceof ZodError) return mapError(e)
+      return { error: 'db_error', message: e instanceof Error ? e.message : 'unknown error' }
+    }
+  })
 }
