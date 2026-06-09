@@ -12,6 +12,18 @@ This phase is **presentation + guidance only**: no change to the build engine (s
 
 ---
 
+## Group 0: Hybrid runtime — local core + `helm` HTTP/WebSocket bridge
+**Delivers:** The runtime move from Electron-IPC to the hybrid model: the existing core logic (Claude Agent SDK orchestration, SQLite, dev-server-manager, all bridge handlers) runs in a local Node server bound to `127.0.0.1`; the `helm` bridge is re-implemented over HTTP (request/response) + WebSocket (server→client pushes); the same React UI runs in a plain browser at `localhost`. Electron is reduced to a shipping shell that starts the core and points a window at it. This is a one-seam change because the UI already reaches everything through the single `helm` bridge surface.
+**Depends on:** none — foundational; everything else rides this transport.
+**Design-dependent:** no
+**Verify:** `cd app && npm rebuild better-sqlite3 && npx vitest run src/main/ipc/__tests__` (handlers pass over the new transport) + `curl -s localhost:<port>/helm/projects.list` returns the projects JSON against a running core.
+
+1. Stand up a local HTTP/WS server in the core (`app/src/main/`) that mounts every existing bridge handler as a `helm` operation: HTTP `POST /helm/<channel>` with the Zod-validated request body → the handler's existing response; a WebSocket endpoint that relays the existing push events (`shelf:updated`, `point:captured`, feed events, etc.). Bind to `127.0.0.1` only.
+2. Re-implement `app/src/shared/bridge-api.ts` client (`helm.*`) over `fetch` + a WebSocket subscription, replacing the `app/src/preload/index.ts` ipcRenderer implementation. Keep the `HelmApi` type surface identical so renderer components are untouched.
+3. Vite serves the React UI; the core serves it (and proxies HMR in dev). The UI runs in a browser at `localhost`.
+4. Reduce Electron to: start the core, open a `BrowserWindow` at the localhost URL. Keep `electron-builder` packaging. (Electron path is exercised only at packaging/distribution.)
+5. Tests: every existing IPC handler test now runs against the HTTP/WS layer (or the handler functions directly); add a smoke test that the core boots, serves the UI, and answers one `helm` HTTP call + one WS push.
+
 ## Group 1: Migration 6 — card `outcome` column + project `position` column
 **Delivers:** Persisted storage for the outcome each card delivers (shown on every card face) and a stable per-project ordering field that reorder writes to.
 **Depends on:** none — schema scaffold (current `user_version` is 5; this is the 6th idempotent migration fn).
@@ -58,13 +70,14 @@ This phase is **presentation + guidance only**: no change to the build engine (s
 4. `app/src/shared/bridge-api.ts` + preload: add `shelf.remove(req)`.
 5. Contract test: add/promote/remove round-trip leaves the shelf empty and emits `shelf:updated` each time; a promoted card carries the request text as its `outcome`.
 
-## Group 5: Inline-text-edit capture — main-process extension of point-capture
-**Delivers:** A text-edit capture mode that, when the user edits text in place in the live app, reports the targeted element selector + old/new text to main and routes the change through the existing fix-session mechanism — no code editor, no new fix pipeline.
-**Depends on:** none (extends the complete Phase 3 point-capture + fix-sessions surface)
+## Group 5: Preview proxy + inline-text-edit capture
+**Delivers:** (a) a **preview proxy** in the core that serves the user's running app through the core's own origin, so click-capture + inline-edit injection works same-origin in a plain browser (the piece Electron's `<webview>` got for free); (b) a text-edit capture mode that, when the user edits text in place in the live app, reports the targeted element selector + old/new text to the core and routes the change through the existing fix-session mechanism — no code editor, no new fix pipeline.
+**Depends on:** Group 0 (the core/transport hosts the proxy); extends the complete Phase 3 point-capture + fix-sessions surface.
 **Design-dependent:** no
 **Verify:** `cd app && npm rebuild better-sqlite3 && npx vitest run src/main/sdk/__tests__/point-capture-service.test.ts src/main/sdk/__tests__/fix-session.test.ts`
 
-1. `app/src/main/sdk/point-capture-service.ts`: add a second injected script (`TEXT_EDIT_INSTALL_SCRIPT`/`REMOVE`) that makes the pointed element `contentEditable`, captures original text on focus and new text on blur/commit, and logs `__HELM_TEXTEDIT__{selector, oldText, newText}` over the same prefix-guarded console channel. Add `activateTextEdit/deactivateTextEdit` and a `consumePendingTextEdit` mirroring the existing capture lifecycle.
+0. Core preview proxy: route the live preview through `127.0.0.1/<project-preview>` so the embedded app is same-origin with the Helm UI; the capture/edit scripts are injected by the proxy. In the Electron shell the existing `<webview>` injection path stays available; the proxy is what makes the browser surface work. Point-capture (`point-capture-service.ts`) is updated to inject via the proxied page rather than (only) `webview.executeJavaScript`.
+1. `app/src/main/sdk/point-capture-service.ts`: add a second injected script (`TEXT_EDIT_INSTALL_SCRIPT`/`REMOVE`) that makes the pointed element `contentEditable`, captures original text on focus and new text on blur/commit, and reports `__HELM_TEXTEDIT__{selector, oldText, newText}` over the same prefix-guarded channel. Add `activateTextEdit/deactivateTextEdit` and a `consumePendingTextEdit` mirroring the existing capture lifecycle.
 2. `app/src/shared/ipc-schemas.ts`: add channels `pointsTextEditActivate: 'points:text-edit-activate'`, `pointsTextEditDeactivate: 'points:text-edit-deactivate'`, `pointsRegisterTextEdit: 'points:register-text-edit'`, and `RegisterTextEditRequest = z.object({ projectId: z.string(), selector: z.string(), oldText: z.string(), newText: z.string() })`.
 3. `app/src/main/ipc/points-bridge.ts`: register the activate/deactivate handlers + `points:register-text-edit` — atomically creates a selector-anchored `fix_comment` card (reusing `createFixComment`) whose note is a generated "change the text on this element from «oldText» to «newText»" instruction, then spawns the fix via `fix-sessions:start`; if the spawn fails, delete the just-created card (no orphan) and return `session_error`. Returns the card on success. No new card type or table. `newText === oldText` → `{ ok: false, error: 'no_change' }`; missing selector/newText → `{ ok: false, error: 'invalid_input' }`; activate when preview not `live` → `{ ok: false, error: 'webview_not_ready' }`.
 4. `app/src/shared/bridge-api.ts` + preload: expose `points.activateTextEdit/deactivateTextEdit/registerTextEdit`.
@@ -119,9 +132,9 @@ This phase is **presentation + guidance only**: no change to the build engine (s
 
 ## Group 10: Story-walk — Chunk 1 (end-to-end build journey)
 **Delivers:** Proof that a user can start "Build something new" at the two-door front door, move through the ordered-milestone journey testing at each checkpoint, triage a mid-journey request (do-now vs park-to-shelf), use the escape hatch, and reach the celebration → strip → free iteration — under the new visual language.
-**Depends on:** Groups 1–9.
+**Depends on:** Groups 0–9.
 **Design-dependent:** yes
-**Verify:** `cd app && npm run rebuild && npx playwright test tests/e2e/build-journey.spec.ts`
+**Verify:** `cd app && npm rebuild better-sqlite3 && npx playwright test tests/e2e/build-journey.spec.ts` (Playwright drives the `localhost` UI against a running core — no Electron rebuild needed for dev E2E)
 
 1. Add a Playwright (electron) E2E spec walking: front door → build journey → checkpoint approve → advance → park a request to shelf → promote it → celebration → collapse-to-strip → board.
 2. Assert "step N of M" copy, the persistent Claude-subscription signal, and shelf round-trip are all present.
@@ -164,7 +177,7 @@ This phase is **presentation + guidance only**: no change to the build engine (s
 **Delivers:** Proof that a user works in the redesigned cockpit where each card shows its outcome next to the live app, clicks an element and applies a described fix, edits text in place on that exact element, and renames/deletes/reorders projects with truthful Live/stop — all under the new visual language.
 **Depends on:** Groups 11–13.
 **Design-dependent:** yes
-**Verify:** `cd app && npm run rebuild && npx playwright test tests/e2e/cockpit.spec.ts`
+**Verify:** `cd app && npm rebuild better-sqlite3 && npx playwright test tests/e2e/cockpit.spec.ts` (drives the `localhost` UI against a running core)
 
 1. Add a Playwright (electron) E2E spec walking: iterate board with outcome-on-card visible → element select → describe fix applied → inline text edit applied to the same element → project rename/reorder/delete + stop.
 2. Assert the outcome string is on every card face, the inline edit targets the exact selector, and Live status reflects real session state.
@@ -173,7 +186,7 @@ This phase is **presentation + guidance only**: no change to the build engine (s
 
 ## Build sequencing notes
 
-- **Design-independent foundation (Groups 1–5)** can be built by `/build` Step 4b in the background while the Pencil design is in progress. All are `Design-dependent: no`.
+- **Design-independent foundation (Groups 0–5)** can be built by `/build` Step 4b in the background while the design is in progress. All are `Design-dependent: no`. **Group 0 (hybrid runtime / transport) goes first** — every other group rides the new `helm` HTTP/WS bridge.
 - **All design-dependent groups (6–14) require the design handover first** — the new Tailwind `@theme` token values and frame index in `handover.md`. This applies to every Group 6–14, not only Group 13's reskin sweep; none of the UI groups can be finished before the design exists (they may be scaffolded, but visual treatment + structure come from the design).
 - **Chunk 1 (Groups 6–10)** ships and is dogfooded before Chunk 2 begins.
 - **Chunk 2 (Groups 11–14)** depends on Chunk 1 + the foundation.

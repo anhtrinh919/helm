@@ -169,9 +169,9 @@ projects table — new column
 
 No new tables. Existing `shelf_items`, `fix_comments`, mode/rail fields are reused as-is.
 
-## API / IPC Contracts
+## API Contracts (the `helm` bridge)
 
-Electron IPC channels (typed via contextBridge, Zod-validated) — not HTTP. Reuse existing channels where noted.
+Operations on the local `helm` API served by the core on `127.0.0.1` — request/response over **HTTP**, server→client pushes (e.g. `shelf:updated`, `point:captured`, feed events) over **WebSocket**. Every message is Zod-validated at the boundary. These keep the same logical names and request/response shapes the app already uses; only the transport moved from Electron IPC to HTTP/WebSocket (see tech-stack.md — hybrid runtime). The UI reaches the core only through this bridge, identically whether it runs in a browser or the Electron shell. "Channel" below means a `helm` operation/message name. Reuse existing operations where noted.
 
 ### Reused without change
 - `projects:rename`, `projects:delete`, `projects:set-mode`, `projects:set-rail-step`
@@ -251,15 +251,16 @@ The journey/cockpit UI observes and drives state through existing engine mechani
 
 - **Grounding principle (non-negotiable):** the guided journey's milestones, checkpoints, and decision moments mirror the real build-stack practice — pressure-test the idea → scope → plan → build the look → build the function → review & try it — in plain non-technical language. Every step name, checkpoint prompt, and triage decision traces to a real stage. "A guided build stack, not a one-shot."
 - **No-code, no-terminal:** the user never sees code, file paths, diffs, branches, or terminal output. All errors are plain English.
-- **Engine unchanged:** no new build capability. Sessions, agent, Claude Agent SDK, live preview, point-and-fix capture mechanism, parallel sessions, and the DB schema (beyond Migration 6) are not modified.
+- **Engine unchanged (logic), transport changed:** no new build *capability*. Sessions, agent, Claude Agent SDK, live preview, point-and-fix capture mechanism, parallel sessions, and the DB schema (beyond Migration 6) keep their logic. The one cross-cutting change this phase is the runtime move to the hybrid model — the `helm` bridge moves from Electron IPC to the local HTTP/WebSocket API, and the UI runs in a browser at `localhost` (Electron becomes the shipping shell only). This is plumbing under the existing single bridge seam, not new product capability.
 - **Bring-your-own-Claude:** runs on the user's Claude subscription via the Claude Agent SDK — no token meter, no second subscription, always Claude.
-- **TypeScript strict; deps pinned exact (no ^/~); Zod validates all IPC.** Renderer sandboxed (`nodeIntegration: false`); all backend access via typed contextBridge.
-- **Design-dependent:** visual treatment comes from the Pencil design file; component structure follows the design tree; the frontend reads the design (and `handover.md` frame index) before implementing. Do not invent visual treatment from this spec.
+- **TypeScript strict; deps pinned exact (no ^/~); Zod validates every `helm` message.** The UI is a web client with no direct Node/filesystem access; all privileged work is in the core, which binds to `127.0.0.1` only.
+- **Design-dependent:** visual treatment comes from the design file; component structure follows the design tree; the frontend reads the design (and `handover.md` frame index) before implementing. Do not invent visual treatment from this spec. The design is transport-agnostic (same screens regardless of runtime).
 - **Migration 6** is an idempotent numbered function bumping `user_version` to 6, adding the two columns only if absent.
 - **Two-chunk split:** Chunk 1 (front door + wizard reskin + build journey + shelf UI + Claude signal) is independently dogfoodable before Chunk 2 (cockpit board + outcome-on-card + inline text edit + project management UI + remaining reskin).
 - **Chunk 1 escape destination:** the redesigned Cockpit Board lands in Chunk 2, so an escape-hatch or celebration exit during the Chunk 1 dogfood cycle lands on the interim (pre-redesign) board. The board wears the new visual language from Chunk 2. This is the only screen not yet in the new language at Chunk 1 ship; the card's "new visual language across every screen" is fully met at phase end (Chunk 2).
-- **Tailwind v4:** tokens live in `app/src/renderer/src/styles/globals.css` `@theme` (no config file). New token values come from the design.
-- **Dogfood surface is the real Electron app**, never the web mock (project rule).
+- **Tailwind v4:** tokens live in the UI's `globals.css` `@theme` (no config file). New token values come from the design.
+- **Dogfood surface is the real `localhost` web UI** backed by the live local core (not a stubbed mock — the browser UI now talks to the real core over the `helm` API, so it exercises real sessions/DB/preview). The packaged Electron app is the distribution form and gets a final check, but day-to-day dogfood is the localhost UI (this supersedes the earlier "Electron-only dogfood" rule, which existed because the old web build was a stub).
+- **Point-and-fix preview proxy:** so click-capture and inline text edit work in a plain browser, the core serves the user's running app through its own origin (a preview proxy), making injection same-origin. In the Electron shell the existing `<webview>` path remains available; the proxy is what makes the browser surface work.
 
 ## Excluded from This Phase
 

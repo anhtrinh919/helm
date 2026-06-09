@@ -30,7 +30,7 @@ Visual direction: calm, sleek, modern, guiding — bold where it counts. Easy to
 A non-developer opens Helm, describes an app, answers a few questions, and watches a board fill with features and their status — no terminal, no file, no technical decision. When something needs them — a question, a broken screen, a choice — it appears as a card they act on directly. When a piece is built, they see the live app in the same window and point at what to fix next. They give it a login screen and a place to store data without knowing what a database is. When it's ready, one click puts it on a URL they can send to anyone. They never paid a second subscription, never hit a usage wall, and never saw a line of code.
 
 ## Design Tool
-external-pencil
+external-other
 
 ## Master User Journey
 

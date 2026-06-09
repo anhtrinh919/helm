@@ -1,10 +1,12 @@
 # The Cockpit & the Journey — Validation
 
-The test contract for `/sdd-review`. Every check must pass before Phase 1 is approved. Manual checks run in the **real Electron app** at the desktop window — never the web mock (project rule).
+The test contract for `/sdd-review`. Every check must pass before Phase 1 is approved. Manual checks run in the **real `localhost` web UI** backed by the live local core (the real thing, not a stub) — with a final pass in the packaged Electron app. Day-to-day dogfood is the localhost UI.
 
 ## Automated Checks
 
-Run these; each must exit 0. (Helm uses Electron IPC, not HTTP — contracts are verified by unit tests on bridge handlers / DB functions, not curl. Tests run against the Node ABI: `cd app && npm rebuild better-sqlite3` first; the app itself uses `npm run rebuild` for the Electron ABI.)
+Run these; each must exit 0. (With the hybrid runtime, the `helm` bridge is HTTP/WebSocket, so contracts can be verified by unit tests on the handlers/DB functions AND by HTTP calls against a running core. Tests run against the Node ABI: `cd app && npm rebuild better-sqlite3` first; the Electron ABI (`npm run rebuild`) is only needed when packaging.)
+
+- **Hybrid runtime boots:** `cd app && npm rebuild better-sqlite3 && npx vitest run src/main/ipc/__tests__` — the core's `helm` HTTP/WS layer answers a sample operation and relays a sample push; the `helm` client (`fetch`+WS) round-trips against it. (Group 0.)
 
 - **TypeScript:** `cd app && tsc -p . --noEmit` — zero type errors across renderer, main, preload; strict; no `any` escapes.
 - **Migration 6 version bump + idempotency:** `cd app && npx vitest run src/main/db/__tests__/db.test.ts` — `PRAGMA user_version` is 6 after migration; re-running the migration leaves it at 6 with no error; both new columns (`cards.outcome`, `projects.position`) exist.
@@ -22,6 +24,12 @@ Run these; each must exit 0. (Helm uses Electron IPC, not HTTP — contracts are
 - **Two-door front door (E2E):** `cd app && npx playwright test tests/e2e/front-door.spec.ts` — two door options visible; "Bring an existing app" shows a "coming soon" indicator and is not clickable.
 
 ## Manual Verification
+
+Run in the real `localhost` web UI (backed by the live core). The packaged Electron app gets a final smoke pass at phase end.
+
+**Hybrid runtime (do first)**
+- [ ] Starting the core and opening `localhost` in a browser shows the real app (not a stub): real projects load, a session can run, the live preview works — all over the `helm` HTTP/WS bridge.
+- [ ] The same UI, launched via the packaged Electron app, behaves identically (final distribution check).
 
 ### Chunk 1 — Front Door & Build Journey
 
@@ -119,5 +127,5 @@ One per primary outcome on `outcome-card.md` (same order). Each is binary and de
 - [ ] Outcome Check 3 passes — inline text edit in the live preview works end-to-end
 - [ ] Frontend compliance check passes — design file coverage matches all UI requirements
 - [ ] UX review passes — no blocking issues from the reviewer fleet
-- [ ] User explicitly approves the phase at the dogfood handoff (on the real Electron app)
+- [ ] User explicitly approves the phase at the dogfood handoff (on the real `localhost` web UI; packaged Electron app smoke-passes too)
 - [ ] Living docs updated: `CHANGELOG.md` entry; `docs/decisions.md` updated with Migration 6 rationale and the latent decisions resolved during build
