@@ -1,11 +1,11 @@
 {
   "phase": 1,
   "feature": "cockpit-and-journey",
-  "step": "spec-complete",
+  "step": "frontend-complete",
   "reviewIteration": 0,
   "requirementsHash": "c3bbe5cf101f149c1c78e9cb5473781fc7a2a31e269e16d6f8e66c61fea0b640",
-  "currentSubStep": "frontend",
+  "currentSubStep": null,
   "dogfoodPid": null,
-  "foundationStatus": null,
+  "foundationStatus": "data-layer-done; transport(Group0)+proxy(Group5) pending attended",
   "note": "Full re-cut 2026-06-09. Phase 1 spec written + skeptic-validated (3 rounds CLEAN). Tech-stack changed to HYBRID runtime (local Node core + helm HTTP/WS bridge + browser UI at localhost; Electron only as shipping shell) — spec revised accordingly (Group 0 transport migration + preview proxy added; hash updated). Design track = external-other (Figma). Next: /frontend design brief, then Step 4b background foundation build of design-independent Groups 0-5."
 }

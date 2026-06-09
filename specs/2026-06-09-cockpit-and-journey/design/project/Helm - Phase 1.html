@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Helm — Phase 1 · The Cockpit & the Journey</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="helm.css" />
+<style>
+  html, body { margin: 0; height: 100%; background: #EDE9E1; }
+  #root { height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="helm-kit.jsx"></script>
+<script type="text/babel" src="screens-foundations.jsx"></script>
+<script type="text/babel" src="screens-frontdoor.jsx"></script>
+<script type="text/babel" src="screens-wizard.jsx"></script>
+<script type="text/babel" src="screens-journey.jsx"></script>
+<script type="text/babel" src="screens-journey2.jsx"></script>
+<script type="text/babel" src="screens-cockpit.jsx"></script>
+
+<script type="text/babel">
+const {
+  DesignCanvas, DCSection, DCArtboard,
+  FoundationColor, FoundationType, FoundationCards, FoundationAtoms,
+  FrontDoorDefault, FrontDoorReturning,
+  WizardIdea, WizardThinking, WizardQuestion, WizardPlan,
+  JourneyA, JourneyB, JourneyC, JourneyCheckpoint,
+  JourneyComplete, JourneyStripStandalone, ShelfPanel, EscapeConfirm, StepFailed, MidJourneyTriage,
+  CockpitA, CockpitB, PointAndFix,
+} = window;
+
+const W = 1360, H = 862; // desktop app window
+
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection id="foundations" title="Foundations" subtitle="The Helm design language — Dot-Matrix: monospace, lime highlighter, hard black frames, sharp corners">
+        <DCArtboard id="f-color" label="Palette" width={1200} height={476}><FoundationColor /></DCArtboard>
+        <DCArtboard id="f-type" label="Type · dual register" width={1200} height={330}><FoundationType /></DCArtboard>
+        <DCArtboard id="f-cards" label="Work card · the core primitive" width={1200} height={628}><FoundationCards /></DCArtboard>
+        <DCArtboard id="f-atoms" label="Progress · signal · controls" width={1200} height={392}><FoundationAtoms /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="frontdoor" title="A · Front Door" subtitle="Two clear doors · import coming-soon · the Claude signal">
+        <DCArtboard id="fd-default" label="Default" width={W} height={H}><FrontDoorDefault /></DCArtboard>
+        <DCArtboard id="fd-return" label="Returning user" width={W} height={H}><FrontDoorReturning /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="wizard" title="A · New-project wizard" subtitle="A friendly interview → a reviewable plan. 'Question N of M' kept distinct from the journey">
+        <DCArtboard id="wz-idea" label="1 · Idea input" width={W} height={H}><WizardIdea /></DCArtboard>
+        <DCArtboard id="wz-think" label="2 · Scoping (thinking)" width={W} height={H}><WizardThinking /></DCArtboard>
+        <DCArtboard id="wz-q" label="3 · Scoping (question ready)" width={W} height={H}><WizardQuestion /></DCArtboard>
+        <DCArtboard id="wz-plan" label="4 · Plan review" width={W} height={H}><WizardPlan /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="journey" title="B · Build journey (Direction C — split, preview-dominant)" subtitle="Step N of M · current / done / locked · For-Later shelf · escape hatch">
+        <DCArtboard id="jr-c" label="Journey C · step in progress" width={W} height={H}><JourneyC /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="checkpoint" title="B · Checkpoint — the hard stop" subtitle="What I built · try it in the live preview · looks good? continue">
+        <DCArtboard id="cp" label="Checkpoint" width={W} height={H}><JourneyCheckpoint /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="journey-states" title="B · Journey states & For-Later shelf" subtitle="The surprises that keep the journey calm: triage, snags, the escape hatch, the shelf, and the finish.">
+        <DCArtboard id="js-triage" label="Mid-journey request — handled now / parked" width={980} height={420}><MidJourneyTriage /></DCArtboard>
+        <DCArtboard id="js-shelf" label="For-Later shelf · items" width={560} height={520}><ShelfPanel /></DCArtboard>
+        <DCArtboard id="js-shelf-empty" label="For-Later shelf · empty" width={560} height={420}><ShelfPanel empty /></DCArtboard>
+        <DCArtboard id="js-escape" label="Escape hatch — leave the journey?" width={760} height={520}><EscapeConfirm /></DCArtboard>
+        <DCArtboard id="js-failed" label="Step failed mid-step — retry / leave" width={W} height={H}><StepFailed /></DCArtboard>
+        <DCArtboard id="js-complete" label="Journey complete — celebration" width={W} height={H}><JourneyComplete /></DCArtboard>
+        <DCArtboard id="js-strip" label="Journey complete — collapsed strip" width={900} height={260}><JourneyStripStandalone /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="cockpit" title="C · Cockpit (Direction A — card spine + live preview)" subtitle="Every card shows its plain-language outcome, beside the live app. Reserved Publish slot held empty for Phase 2.">
+        <DCArtboard id="cp-a" label="Cockpit A · build mode" width={W} height={H}><CockpitA /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="pointfix" title="C · Point-and-fix" subtitle="Click any element → edit text in place, or describe a fix">
+        <DCArtboard id="pf" label="Text element selected" width={W} height={H}><PointAndFix /></DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

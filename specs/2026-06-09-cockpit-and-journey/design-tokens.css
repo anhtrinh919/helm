@@ -1,0 +1,79 @@
+/* Generated from the Helm design pack (Claude Design handoff) on 2026-06-09.
+ * Source of truth: specs/2026-06-09-cockpit-and-journey/design/project/helm.css
+ * Design language: "DOT-MATRIX" — terminal/retro-graphic. Monospace type, lime
+ * highlighter (FILL ONLY, never coloured text on light), hard black frames,
+ * sharp corners (zero radius), hard-offset shadows, dot-grid texture.
+ * Do not edit by hand — regenerate if the design changes.
+ *
+ * NOTE: the design ships a complete component-class system (the .hm- classes in
+ * design/project/helm.css). The build should port those classes into the app's
+ * stylesheet; this file is the token layer they (and any Tailwind @theme) consume.
+ */
+:root {
+  /* Foundation — warm bone paper */
+  --bg: #E7E7DB;          /* deepest canvas */
+  --surface: #FAFAF1;     /* main window surface */
+  --surface-2: #ECECE1;   /* recessed working area / board */
+  --surface-3: #FCFCF5;   /* elevated cards */
+  --rail: #E4E4D7;        /* side nav */
+  --paper: #F6F6EC;       /* light ink on dark surfaces */
+
+  --ink: #14150E;         /* near-black */
+  --ink-2: #34362B;       /* secondary */
+  --ink-3: #6E7064;       /* muted */
+  --ink-4: #9A9C8E;       /* faint */
+
+  --frame: #14150E;       /* the signature strong black frame */
+  --hair: #D4D4C7;        /* soft internal divider */
+  --line: #D4D4C7;
+  --line-2: #C6C6B8;
+
+  /* The lime "live thread" — a FILL/HIGHLIGHT, never coloured text on light */
+  --lime: #C2EE2A;
+  --lime-deep: #B0DC18;
+  --lime-weak: #EDF7C2;
+  --lime-ink: #14150E;        /* text/icon ON lime */
+  --accent: #C2EE2A;          /* alias */
+  --accent-ink: #14150E;
+  --accent-weak: #EDF7C2;
+  --accent-weak-2: #E0F1A2;
+  --accent-border: #14150E;
+  --accent-text: #5E6E0C;     /* the ONLY legible lime for coloured TEXT/cues on light */
+
+  /* Semantics — scarce, square, each distinct from lime */
+  --success: #2F7D4F; --success-weak: #E0EEE2; --success-border: #14150E;
+  --needs: #A66A12; --needs-weak: #F6EBCF; --needs-border: #14150E; --needs-dot: #D89200;
+  --fail: #BA4630; --fail-weak: #F6E1D9; --fail-border: #14150E;
+  --parked: #6E7064; --parked-weak: #E6E6DA; --parked-border: #14150E;
+  --live: #3C9A2E;
+
+  /* Radius — SHARP. Dot-Matrix is a printed grid. */
+  --r1: 0; --r2: 0; --r3: 0; --r4: 0; --r5: 0; --pill: 0;
+
+  /* Shadows — hard offsets only, no blur, used sparingly on focal items */
+  --sh1: none;
+  --hard: 4px 4px 0 var(--ink);
+  --hard-lg: 6px 6px 0 var(--ink);
+  --sh2: 4px 4px 0 var(--ink);
+  --sh3: 6px 6px 0 var(--ink);
+  --pop: 6px 6px 0 rgba(20, 21, 14, .92);
+  --ring: 0 0 0 3px rgba(194, 238, 42, .55);
+
+  /* Type — all monospace. Space Mono = display, JetBrains Mono = UI/body */
+  --display: 'Space Mono', ui-monospace, monospace;
+  --sans: 'JetBrains Mono', ui-monospace, monospace;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --dotcol: rgba(20, 21, 14, .085);
+
+  --ease: cubic-bezier(.2, 0, 0, 1);
+  --fast: 120ms; --base: 200ms; --slow: 320ms;
+}
+
+/* Fonts required (wire via @fontsource or a font CDN; weights 400 + 700):
+ *   - Space Mono (display / headings)
+ *   - JetBrains Mono (UI / body / mono)
+ *   - Phosphor icons (the design uses Phosphor regular). In the design prototype
+ *     icons were injected as raw glyph chars to dodge a sandbox bug — in the real
+ *     app, use a normal Phosphor React/font integration; that workaround is NOT needed.
+ */
