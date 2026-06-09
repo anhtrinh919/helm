@@ -3,6 +3,8 @@ import {
   INSTALL_SCRIPT,
   PointCaptureService,
   REMOVE_SCRIPT,
+  TEXT_EDIT_INSTALL_SCRIPT,
+  TEXT_EDIT_REMOVE_SCRIPT,
   type CaptureGeometry,
   type GuestView,
   type PointCaptureDeps,
@@ -145,5 +147,94 @@ describe('PointCaptureService', () => {
     guest.emitConsole(clickLine())
     await new Promise((r) => setTimeout(r, 10))
     expect(captures).toHaveLength(0)
+  })
+})
+
+const textEditLine = (newText: string, oldText = 'Old label'): string =>
+  '__HELM_TEXTEDIT__' +
+  JSON.stringify({ selector: 'main > h1', oldText, newText })
+
+describe('PointCaptureService — inline text edit', () => {
+  it('activateTextEdit injects the edit script into the matching live guest', () => {
+    const { service, guest } = makeService()
+    expect(service.activateTextEdit('p1')).toBe(true)
+    expect(guest.injected).toEqual([TEXT_EDIT_INSTALL_SCRIPT])
+    expect(service.isTextEditActive('p1')).toBe(true)
+  })
+
+  it('activateTextEdit is a no-op false when the preview is not live', () => {
+    const { service, guest } = makeService({ live: false })
+    expect(service.activateTextEdit('p1')).toBe(false)
+    expect(guest.injected).toEqual([])
+    expect(service.isTextEditActive('p1')).toBe(false)
+  })
+
+  it('a committed inline edit yields a pending text edit (selector + old/new text)', async () => {
+    const { service, guest } = makeService()
+    service.activateTextEdit('p1')
+    guest.emitConsole(textEditLine('New label'))
+    await vi.waitFor(() =>
+      expect(service.consumePendingTextEdit('p1')).not.toBeNull(),
+    )
+  })
+
+  it('consumePendingTextEdit returns the captured fields once then clears', async () => {
+    const { service, guest } = makeService()
+    service.activateTextEdit('p1')
+    guest.emitConsole(textEditLine('New label', 'Old label'))
+    let pending: ReturnType<typeof service.consumePendingTextEdit> = null
+    await vi.waitFor(() => {
+      pending = service.consumePendingTextEdit('p1')
+      expect(pending).not.toBeNull()
+    })
+    expect(pending).toEqual({ selector: 'main > h1', oldText: 'Old label', newText: 'New label' })
+    expect(service.consumePendingTextEdit('p1')).toBeNull()
+  })
+
+  it('deactivateTextEdit tears down the editor and stops listening', async () => {
+    const { service, guest } = makeService()
+    service.activateTextEdit('p1')
+    service.deactivateTextEdit('p1')
+    expect(guest.injected).toEqual([TEXT_EDIT_INSTALL_SCRIPT, TEXT_EDIT_REMOVE_SCRIPT])
+    expect(guest.consoleSubscribers).toBe(0)
+    guest.emitConsole(textEditLine('Late'))
+    await new Promise((r) => setTimeout(r, 10))
+    expect(service.consumePendingTextEdit('p1')).toBeNull()
+  })
+
+  it('malformed text-edit output is ignored', async () => {
+    const { service, guest } = makeService()
+    service.activateTextEdit('p1')
+    guest.emitConsole('__HELM_TEXTEDIT__{not json')
+    await new Promise((r) => setTimeout(r, 10))
+    expect(service.consumePendingTextEdit('p1')).toBeNull()
+  })
+
+  it('a guest reload tears down active point + text-edit modes (mid-edit cleanup)', () => {
+    const guest = fakeGuest()
+    let fireReload: () => void = () => {}
+    const deps: PointCaptureDeps = {
+      listGuests: () => [{ url: 'http://localhost:4444/', view: guest }],
+      previewUrl: () => 'http://localhost:4444',
+      onGuestReload: (cb) => {
+        fireReload = cb
+        return () => {}
+      },
+    }
+    const service = new PointCaptureService(
+      deps,
+      () => {},
+      () => {},
+    )
+    service.activate('p1')
+    service.activateTextEdit('p1')
+    expect(service.isActive('p1')).toBe(true)
+    expect(service.isTextEditActive('p1')).toBe(true)
+
+    fireReload()
+    expect(service.isActive('p1')).toBe(false)
+    expect(service.isTextEditActive('p1')).toBe(false)
+    expect(guest.injected).toContain(REMOVE_SCRIPT)
+    expect(guest.injected).toContain(TEXT_EDIT_REMOVE_SCRIPT)
   })
 })

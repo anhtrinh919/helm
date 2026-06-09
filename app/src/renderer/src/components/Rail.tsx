@@ -1,85 +1,103 @@
-import { BrandMark } from './BrandMark'
+import { Icon } from './ui/Icon'
+import { ClaudeSignal } from './ui/ClaudeSignal'
 import { useProjects } from '../store/projects'
 import type { Project } from '@shared/ipc-schemas'
 
-const SUBTITLE: Record<string, string> = {
-  active: 'Building now',
-  needs_you: 'Needs your call',
-  failed: 'Off-track',
-  idle: 'Paused',
+function modeLabel(p: Project): string {
+  if (p.mode === 'build') return (p.railComplete ? 'Build · done' : 'Build mode')
+  return 'Iterate mode'
 }
 
-function subtitle(p: Project): string {
-  if (p.status === 'done') return 'Done'
-  if (p.status === 'planning') return 'Just started'
-  return SUBTITLE[p.backgroundStatus] ?? 'Ready'
-}
-
-const DOT: Record<string, string> = {
-  active: 'bg-lime',
-  needs_you: 'bg-pink',
-  failed: 'bg-orange',
-  idle: 'bg-canvas/35',
-}
-
-/** The dark left rail: brand, your builds, new-build CTA, agent presence. Shared across switcher + board. */
+/** The DOT-MATRIX working surface rail: brand mark, project switcher pill,
+ *  nav items for this project, Claude signal at the bottom. */
 export function Rail({ activeProjectId }: { activeProjectId?: string }): React.JSX.Element {
   const projects = useProjects((s) => s.projects)
   const open = useProjects((s) => s.open)
   const newBuild = useProjects((s) => s.newBuild)
 
+  const activeProject = projects.find((p) => p.id === activeProjectId)
+  const isLive = activeProject?.backgroundStatus === 'active'
+
   return (
-    <aside className="flex w-[260px] shrink-0 flex-col gap-5 rounded-[24px] bg-ink px-[18px] pb-[18px] pt-[22px]">
-      <BrandMark onDark />
-      <div className="text-[11px] font-bold tracking-[0.18em] text-canvas/45">YOUR BUILDS</div>
-
-      <div className="flex flex-col gap-2.5">
-        {projects.map((p) => {
-          const isActive =
-            p.id === activeProjectId || (!activeProjectId && p.backgroundStatus === 'active')
-          return (
-            <button
-              key={p.id}
-              onClick={() => open(p.id)}
-              className={`flex flex-col gap-1.5 rounded-[14px] px-3.5 py-3 text-left transition ${
-                isActive
-                  ? 'brut bg-lime text-ink'
-                  : 'border-2 border-transparent bg-railcard text-canvas hover:border-canvas/20'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${isActive ? 'bg-ink' : DOT[p.backgroundStatus]}`} />
-                <span className="flex-1 truncate text-sm font-semibold">{p.name}</span>
-                {p.backgroundStatus === 'active' && (
-                  <span className="rounded-full brut-2 bg-canvas px-1.5 text-[9px] font-black text-ink">
-                    LIVE
-                  </span>
-                )}
-              </div>
-              <span className={`text-xs ${isActive ? 'text-ink/70' : 'text-canvas/50'}`}>
-                {subtitle(p)}
-              </span>
-            </button>
-          )
-        })}
+    <aside className="hm-rail">
+      {/* Brand */}
+      <div className="hm-rail__brand">
+        <span className="hm-mark">H</span>
+        <span className="hm-wordmark">Helm</span>
       </div>
 
-      <button
-        onClick={newBuild}
-        className="flex items-center justify-center gap-2 rounded-[14px] brut bg-pink px-4 py-3 text-sm font-bold text-ink"
-      >
-        <span aria-hidden>＋</span> Start a new build
-      </button>
-
-      <div className="flex-1" />
-
-      <div className="rounded-[14px] bg-violet p-3.5 text-canvas">
-        <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-lime" />
-          <span className="text-[10px] font-bold tracking-[0.18em]">AGENT ONLINE</span>
+      {/* Project switcher pill */}
+      {activeProject && (
+        <div className="hm-projpill" onClick={() => open(activeProject.id)} style={{ cursor: 'pointer' }}>
+          <span
+            className="hm-projpill__dot"
+            style={!isLive ? { background: 'var(--ink-4)', boxShadow: 'none' } : undefined}
+          />
+          <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25, minWidth: 0, flex: 1 }}>
+            <span className="hm-projpill__name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {activeProject.name}
+            </span>
+            <span className="hm-projpill__meta">
+              {isLive ? 'Live · ' : ''}{modeLabel(activeProject)}
+            </span>
+          </span>
+          <Icon n="caret-up-down" size={15} />
         </div>
-        <div className="mt-1.5 text-sm font-semibold">Ready to build</div>
+      )}
+
+      {/* Nav items */}
+      <div className="hm-rail__group">
+        <div className="hm-rail__label">This project</div>
+        <div className="hm-navitem is-active">
+          <Icon n="squares-four" />Cockpit
+        </div>
+        <div className="hm-navitem">
+          <Icon n="git-branch" />Decisions
+        </div>
+        <div className="hm-navitem">
+          <Icon n="chart-line-up" />Progress
+        </div>
+        <div className="hm-navitem">
+          <Icon n="book-open" />Docs
+        </div>
+        <div className="hm-navitem" style={{ color: 'var(--ink-4)', cursor: 'default' }}>
+          <Icon n="database" />Data
+          <span className="hm-soontag" style={{ marginLeft: 'auto' }}>Phase 3</span>
+        </div>
       </div>
+
+      {/* Other projects quick-access */}
+      {projects.filter((p) => p.id !== activeProjectId).length > 0 && (
+        <div className="hm-rail__group" style={{ marginTop: 8 }}>
+          <div className="hm-rail__label">Switch project</div>
+          {projects
+            .filter((p) => p.id !== activeProjectId)
+            .slice(0, 3)
+            .map((p) => (
+              <div
+                key={p.id}
+                className="hm-navitem"
+                onClick={() => open(p.id)}
+                style={{ cursor: 'pointer' }}
+              >
+                <Icon n="squares-four" />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                  {p.name}
+                </span>
+              </div>
+            ))}
+        </div>
+      )}
+
+      {/* New build CTA */}
+      <div style={{ marginTop: 12 }}>
+        <button className="hm-btn hm-btn--block" onClick={newBuild} style={{ justifyContent: 'flex-start' }}>
+          <Icon n="plus" />New build
+        </button>
+      </div>
+
+      <div className="hm-rail__spacer" />
+      <ClaudeSignal />
     </aside>
   )
 }

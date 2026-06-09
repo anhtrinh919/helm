@@ -112,6 +112,13 @@ export function setCardOutcome(db: Db, id: string, outcome: string): Card {
   return getCard(db, id)
 }
 
+/** Hard-delete a card. The fix_comments / build_steps rows that reference it are
+ *  removed by FK ON DELETE CASCADE. Used to roll back an atomic create whose
+ *  follow-on step (e.g. spawning a fix session) failed — no orphan card. */
+export function deleteCard(db: Db, id: string): void {
+  db.prepare(`DELETE FROM cards WHERE id = ?`).run(id)
+}
+
 export function updateCheckpoint(
   db: Db,
   id: string,

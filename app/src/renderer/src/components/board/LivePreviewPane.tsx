@@ -1,36 +1,26 @@
 import { createElement, useEffect, useRef, useState } from 'react'
+import { Icon } from '../ui/Icon'
 import type { PreviewState } from '@shared/ipc-schemas'
 import { isMock } from '../../bridge'
 import { usePreview } from '../../store/preview'
 import { PointAnnotations } from './PointModeOverlay'
 
-/** Stable default so the zustand selector never returns a fresh object (which
- *  would re-render every tick and blank the tree). */
 const NONE: PreviewState = { status: 'none' }
 
 /**
- * The Live Preview tab (formerly the F29 stub). Renders the project's running
- * app embedded in the Helm window, with calm in-between states. Frames F30–F35.
- *
- * The running app sits in a neutral "stage" with macOS-style window dots and NO
- * browser chrome — no address bar, no URL, no devtools. During building / snag
- * the last-good app stays underneath a calm cream veil so it never blanks out.
- * The live stage is kept a clean canvas: Phase 3's point-and-fix layer lands here.
+ * DOT-MATRIX live preview panel — the `.hm-preview` chrome with a URL pill,
+ * live dot, refresh/pop-out controls, and calm in-between states.
+ * Building/snag keep the last-good app underneath dimmed.
  */
 export function LivePreviewPane({ projectId }: { projectId: string }): React.JSX.Element {
   const state = usePreview((s) => s.states[projectId]) ?? NONE
   const load = usePreview((s) => s.load)
   const ensureServer = usePreview((s) => s.ensureServer)
-  // Remember the last URL we saw live, so building/snag can keep it underneath.
   const [lastUrl, setLastUrl] = useState<string | null>(null)
-  // A webview that fails to load shows the calm snag veil, not a raw error page.
   const [loadFailed, setLoadFailed] = useState(false)
 
   useEffect(() => {
     setLoadFailed(false)
-    // Backfill state, then idempotently ask the dev server to come up. If the
-    // project has no artifact yet the main process answers no_artifact and we
-    // stay on the calm empty state — opening the tab is the user's start signal.
     void load(projectId).then(() => ensureServer(projectId))
   }, [projectId, load, ensureServer])
 
@@ -38,73 +28,117 @@ export function LivePreviewPane({ projectId }: { projectId: string }): React.JSX
     if (state.status === 'live') setLastUrl(state.url)
   }, [state])
 
-  if (state.status === 'live' && !loadFailed) {
-    return <LiveStage url={state.url} projectId={projectId} onFail={() => setLoadFailed(true)} />
-  }
-
-  // none / building / snag / blocked (or a failed embed) → a calm centered panel.
-  // building & snag keep the last-good app dimmed underneath when we have one.
-  // (state.status === 'live' only reaches here when loadFailed, → snag.)
-  const status: 'none' | 'building' | 'snag' | 'blocked' =
+  const isLive = state.status === 'live' && !loadFailed
+  const overlayStatus: 'none' | 'building' | 'snag' | 'blocked' =
     loadFailed || state.status === 'live' ? 'snag' : state.status
-  const underlay = (status === 'building' || status === 'snag') && lastUrl
+  const hasUnderlay = (overlayStatus === 'building' || overlayStatus === 'snag') && !!lastUrl
+
+  const displayUrl =
+    isLive && state.status === 'live'
+      ? (state.url.replace(/^https?:\/\//, ''))
+      : (lastUrl ? lastUrl.replace(/^https?:\/\//, '') : 'localhost')
+
   return (
-    <div className="relative grid flex-1 place-items-center overflow-hidden rounded-[18px] bg-stage brut-2">
-      {underlay && <Embed url={lastUrl} muted />}
-      <Overlay status={status} veiled={!!underlay} />
+    <div className="hm-preview" style={{ flex: 1, minHeight: 0 }}>
+      {/* Address bar */}
+      <div className="hm-preview__bar">
+        {isLive ? (
+          <span className="hm-dot hm-dot--live" />
+        ) : (
+          <span className="hm-dot hm-dot--idle" />
+        )}
+        <div className="hm-urlpill" style={{ flex: 1 }}>
+          <Icon n="lock-simple" size={12} />
+          <span
+            style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              opacity: isLive ? 1 : 0.45,
+            }}
+          >
+            {displayUrl}
+          </span>
+          {!isLive && overlayStatus !== 'none' && (
+            <span
+              style={{
+                marginLeft: 'auto',
+                fontSize: 11,
+                fontWeight: 700,
+                color: overlayStatus === 'building' ? 'var(--accent-text)' : 'var(--fail)',
+                letterSpacing: '.04em',
+                textTransform: 'uppercase',
+                flexShrink: 0,
+              }}
+            >
+              {overlayStatus === 'building' ? 'Building…' : 'Not running'}
+            </span>
+          )}
+        </div>
+        <button className="hm-btn hm-btn--sm hm-btn--quiet">
+          <Icon n="arrow-clockwise" />
+        </button>
+        <button className="hm-btn hm-btn--sm hm-btn--quiet">
+          <Icon n="arrow-square-out" />
+        </button>
+      </div>
+
+      {/* Stage */}
+      <div className="hm-preview__stage" style={{ position: 'relative', flex: 1, minHeight: 0 }}>
+        {isLive && state.status === 'live' ? (
+          <div className="hm-preview__frame" style={{ flex: 1, position: 'relative' }}>
+            <LiveEmbed url={state.url} projectId={projectId} onFail={() => setLoadFailed(true)} />
+          </div>
+        ) : (
+          <div className="hm-preview__frame" style={{ flex: 1, position: 'relative' }}>
+            {hasUnderlay && <Embed url={lastUrl!} muted projectId={projectId} />}
+            <PreviewOverlay status={overlayStatus} veiled={hasUnderlay} />
+          </div>
+        )}
+      </div>
+
+      {/* Point-and-fix hint when live */}
+      {isLive && (
+        <div style={{ padding: '0 18px 18px', display: 'flex', justifyContent: 'center' }}>
+          <span
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 13,
+              color: 'var(--ink-2)',
+              background: 'var(--surface-3)',
+              border: '1.5px solid var(--frame)',
+              padding: '8px 14px',
+            }}
+          >
+            <Icon n="cursor-click" size={14} />
+            Click any part of your app to change it
+          </span>
+        </div>
+      )}
     </div>
   )
 }
 
-/** The running app, full-bleed in a chrome-less stage (window dots only).
- *  The point-and-fix annotation layer (pins, rings, comment box) sits over the
- *  embed — pointer-transparent so the embedded app still feels the cursor. */
-function LiveStage({
-  url,
-  projectId,
-  onFail,
-}: {
-  url: string
-  projectId: string
-  onFail: () => void
-}): React.JSX.Element {
-  return (
-    <div className="flex flex-1 flex-col overflow-hidden rounded-[18px] bg-stage brut-2">
-      <div className="flex items-center gap-2 border-b-2 border-ink/10 px-4 py-2.5">
-        <span className="h-3 w-3 rounded-full" style={{ background: '#FF5F57' }} />
-        <span className="h-3 w-3 rounded-full" style={{ background: '#FFBD2E' }} />
-        <span className="h-3 w-3 rounded-full" style={{ background: '#28C940' }} />
-        <span className="ml-2 text-[11px] font-bold tracking-wide text-soft">
-          Your app · live — yours to try
-        </span>
-      </div>
-      <div className="relative min-h-0 flex-1">
-        <Embed url={url} onFail={onFail} />
-        <PointAnnotations projectId={projectId} />
-      </div>
-    </div>
-  )
-}
-
-/** Picks the embed element: a real <webview> in Electron, an <iframe> in the
- *  browser mock (which has no webview tag). Both just render a URL. A load
- *  failure calls `onFail` so the pane shows the calm snag veil, not a raw error. */
 function Embed({
   url,
   muted,
   onFail,
+  projectId,
 }: {
   url: string
   muted?: boolean
   onFail?: () => void
+  projectId: string
 }): React.JSX.Element {
   const ref = useRef<HTMLElement | null>(null)
-  const className = `absolute inset-0 h-full w-full border-0 ${muted ? 'pointer-events-none opacity-40' : ''}`
+  const className = `absolute inset-0 h-full w-full border-0 ${muted ? 'pointer-events-none' : ''}`
+  const style = muted ? { display: 'flex', opacity: 0.4, filter: 'saturate(0.7)' } : { display: 'flex' }
 
   useEffect(() => {
     const el = ref.current
     if (!el || !onFail) return
-    // Electron <webview> emits `did-fail-load`; the <iframe> mock emits `error`.
     const handler = (): void => onFail()
     el.addEventListener('did-fail-load', handler)
     el.addEventListener('error', handler)
@@ -114,67 +148,106 @@ function Embed({
     }
   }, [onFail, url])
 
-  if (isMock) {
-    return <iframe ref={ref as React.RefObject<HTMLIFrameElement>} src={url} title="Live preview" className={className} />
+  // Electron shell: a <webview> guest the core injects capture/edit into.
+  // Plain browser (hybrid dogfood): the <webview> tag renders nothing, so load
+  // the running app through the core's same-origin preview proxy instead, which
+  // serves it under /preview/<projectId>/ with the capture/edit bridge injected.
+  const isElectron =
+    typeof navigator !== 'undefined' && /Electron/i.test(navigator.userAgent)
+
+  if (isMock || !isElectron) {
+    const src = isMock ? url : `/preview/${projectId}/`
+    return (
+      <iframe
+        ref={ref as React.RefObject<HTMLIFrameElement>}
+        src={src}
+        title="Live preview"
+        className={className}
+        style={style}
+      />
+    )
   }
-  // <webview> is an Electron intrinsic element not in React's JSX types.
-  return createElement('webview', { ref, src: url, class: className, style: { display: 'flex' } })
+  return createElement('webview', { ref, src: url, class: className, style })
 }
 
-const COPY: Record<
+// Wrap Embed + PointAnnotations only when live (avoids importing PointAnnotations
+// in the muted path — keeps the component focused)
+function LiveEmbed({
+  url,
+  projectId,
+  onFail,
+}: {
+  url: string
+  projectId: string
+  onFail: () => void
+}): React.JSX.Element {
+  return (
+    <div style={{ position: 'absolute', inset: 0 }}>
+      <Embed url={url} onFail={onFail} projectId={projectId} />
+      <PointAnnotations projectId={projectId} />
+    </div>
+  )
+}
+
+const OVERLAY_COPY: Record<
   'none' | 'building' | 'snag' | 'blocked',
-  { eyebrow?: string; title: string; body: string; tone: string }
+  { title: string; body: string }
 > = {
   none: {
-    title: 'Your app will appear here as it’s built.',
-    body: 'The moment there’s something runnable, it shows up right here — ready to click around.',
-    tone: 'text-soft',
+    title: 'Your app will appear here once the first step builds something.',
+    body: "The moment there's something runnable, it shows up right here — ready to click around.",
   },
   building: {
-    eyebrow: 'BUILDING',
-    title: 'Building the next piece…',
-    body: 'The current version is still here underneath — it’ll swap in the moment the new one is ready.',
-    tone: 'text-blue',
+    title: 'Building…',
+    body: "The current version stays underneath — it'll swap in the moment the next one is ready.",
   },
   snag: {
-    eyebrow: 'FIXING A SNAG',
-    title: 'The agent caught something — it’s handling it.',
-    body: 'A small hitch, nothing for you to do. Your app stays up while it sorts itself out.',
-    tone: 'text-orange',
+    title: 'Not running',
+    body: "The app isn't running right now. It will come back when the next build step completes.",
   },
   blocked: {
-    eyebrow: 'PAUSED — NEEDS YOU',
-    title: 'A question is waiting on the board.',
-    body: 'The agent reached a fork it can’t pick on its own. Find it pinned on the build spine.',
-    tone: 'text-pink',
+    title: 'Waiting on your answer',
+    body: 'A question is waiting on the board. Answer it to continue the build.',
   },
 }
 
-function Overlay({
+function PreviewOverlay({
   status,
   veiled,
 }: {
   status: 'none' | 'building' | 'snag' | 'blocked'
   veiled: boolean
 }): React.JSX.Element {
-  const c = COPY[status]
-  const busy = status === 'building' || status === 'snag'
+  const c = OVERLAY_COPY[status]
+  const busy = status === 'building'
   return (
     <div
-      className={`relative z-10 mx-6 max-w-md rounded-[18px] brut-2 px-8 py-7 text-center ${
-        veiled ? 'bg-canvas/90 backdrop-blur-sm' : 'bg-cream/70 border-dashed'
-      }`}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'grid',
+        placeItems: 'center',
+        background: veiled ? 'rgba(250,250,241,.88)' : 'transparent',
+        zIndex: 10,
+      }}
     >
-      {c.eyebrow && (
-        <span className={`text-[11px] font-black tracking-[0.16em] ${c.tone}`}>{c.eyebrow}</span>
-      )}
-      <div className="mt-2 font-display text-2xl font-black text-ink">{c.title}</div>
-      <div className="mt-1.5 text-sm text-soft">{c.body}</div>
-      {busy && (
-        <div className="mx-auto mt-4 h-1.5 w-40 overflow-hidden rounded-full bg-ink/10">
-          <div className="h-full w-1/3 animate-[helmslide_1.4s_ease-in-out_infinite] rounded-full bg-ink/40" />
-        </div>
-      )}
+      <div
+        style={{
+          background: 'var(--surface-3)',
+          border: '1.5px solid var(--frame)',
+          borderRadius: 0,
+          padding: '28px 30px',
+          maxWidth: 360,
+          textAlign: 'center',
+          boxShadow: veiled ? 'none' : 'var(--hard)',
+        }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.3 }}>{c.title}</div>
+        <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 8, lineHeight: 1.5 }}>{c.body}</div>
+        {busy && (
+          <div className="hm-buildbar" style={{ marginTop: 16 }}><i /></div>
+        )}
+      </div>
     </div>
   )
 }

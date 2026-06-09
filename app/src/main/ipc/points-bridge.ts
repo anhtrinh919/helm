@@ -5,7 +5,9 @@ import {
   ListPinsRequest,
   PointModeRequest,
   RegisterPointRequest,
+  RegisterTextEditRequest,
   StartFixSessionRequest,
+  TextEditModeRequest,
   type IpcError,
 } from '../../shared/ipc-schemas'
 import type { Db } from '../db/connection'
@@ -17,8 +19,9 @@ import {
   PreviewNotLiveError,
 } from '../db/errors'
 import { getProject } from '../db/projects'
-import { createCard, getCard } from '../db/cards'
+import { createCard, deleteCard, getCard } from '../db/cards'
 import { createFixComment, listOpenPins } from '../db/fix-comments'
+import { isIpcError } from '../../shared/ipc-schemas'
 import { SdkInitError } from '../sdk/session-runner'
 import type { PointCaptureService } from '../sdk/point-capture-service'
 import type { DevServerManager } from '../sdk/dev-server-manager'
@@ -149,6 +152,101 @@ export function registerPointsBridge(db: Db, deps: PointsBridgeDeps = {}): void 
       capture?.deactivate(projectId)
       return { ok: true as const }
     } catch (e) {
+      return mapError(e)
+    }
+  })
+
+  /* ------------------------- inline text edit (Group 5) ------------------------- */
+
+  ipcMain.handle(CH.pointsTextEditActivate, (_e, raw: unknown) => {
+    try {
+      const { projectId } = TextEditModeRequest.parse(raw)
+      getProject(db, projectId)
+      // Mirror points:register's liveness rule, but surface it as the inline-edit
+      // contract error so the UI can disable "Edit text here" precisely.
+      if (!devServer || devServer.getState(projectId).status !== 'live') {
+        return { error: 'webview_not_ready' as const }
+      }
+      if (!capture?.activateTextEdit(projectId)) {
+        return { error: 'webview_not_ready' as const }
+      }
+      return { ok: true as const }
+    } catch (e) {
+      return mapError(e)
+    }
+  })
+
+  ipcMain.handle(CH.pointsTextEditDeactivate, (_e, raw: unknown) => {
+    try {
+      const { projectId } = TextEditModeRequest.parse(raw)
+      getProject(db, projectId)
+      capture?.deactivateTextEdit(projectId)
+      return { ok: true as const }
+    } catch (e) {
+      return mapError(e)
+    }
+  })
+
+  ipcMain.handle(CH.pointsRegisterTextEdit, (_e, raw: unknown) => {
+    let createdCardId: string | null = null
+    try {
+      const req = RegisterTextEditRequest.parse(raw)
+      getProject(db, req.projectId)
+
+      const selector = req.selector.trim()
+      const newText = req.newText.trim()
+      // Zod already rejects an empty selector; guard whitespace-only + empty newText.
+      if (!selector || !newText) return { error: 'invalid_input' as const }
+      if (newText === req.oldText.trim()) return { error: 'no_change' as const }
+
+      if (devServer && devServer.getState(req.projectId).status !== 'live') {
+        throw new PreviewNotLiveError('inline text edit needs a running app')
+      }
+
+      // The edit reuses the existing fix pipeline: a selector-anchored fix_comment
+      // whose note is a plain-language change instruction the agent applies.
+      const note = `Change the text on this element from «${req.oldText}» to «${newText}»`
+      const bare = createCard(db, req.projectId, 'fix_comment', note, 'user_added', 'waiting')
+      createdCardId = bare.id
+      createFixComment(db, {
+        cardId: bare.id,
+        projectId: req.projectId,
+        selector,
+        note,
+        noteType: 'change',
+      })
+
+      // Spawn the fix through the SAME path point-and-fix uses. On any failure
+      // (throw or typed error result) roll the just-created card back so no
+      // orphan fix_comment lingers, and report session_error.
+      if (!orchestrator) {
+        deleteCard(db, bare.id)
+        return { error: 'session_error' as const }
+      }
+      let spawn: unknown
+      try {
+        spawn = orchestrator.startOrQueueFix(req.projectId, bare.id)
+      } catch {
+        deleteCard(db, bare.id)
+        return { error: 'session_error' as const }
+      }
+      if (isIpcError(spawn)) {
+        deleteCard(db, bare.id)
+        return { error: 'session_error' as const }
+      }
+
+      const card = getCard(db, bare.id)
+      send(CH.boardUpdate, { projectId: req.projectId, cardId: card.id, card })
+      pushPins(req.projectId)
+      return { card }
+    } catch (e) {
+      if (createdCardId) {
+        try {
+          deleteCard(db, createdCardId)
+        } catch {
+          /* best-effort rollback */
+        }
+      }
       return mapError(e)
     }
   })

@@ -355,6 +355,115 @@ describe('checkpoint approve / reject for fix sessions', () => {
   })
 })
 
+describe('points:register-text-edit (Group 5 — inline text edit)', () => {
+  /** Drive the real guest so main holds a pending text-edit, then register it. */
+  async function commitEdit(newText = 'New heading', oldText = 'Old heading'): Promise<void> {
+    capture.activateTextEdit(projectId)
+    guest.emitConsole(
+      '__HELM_TEXTEDIT__' + JSON.stringify({ selector: 'main > h1', oldText, newText }),
+    )
+    await new Promise((r) => setTimeout(r, 5))
+  }
+
+  it('registering an edit produces a fix_comment card carrying selector + change instruction, and spawns the fix', async () => {
+    await goLive()
+    await commitEdit('New heading', 'Old heading')
+    const res = await call(CH.pointsRegisterTextEdit, {
+      projectId,
+      selector: 'main > h1',
+      oldText: 'Old heading',
+      newText: 'New heading',
+    })
+    expect(res.card).toMatchObject({ type: 'fix_comment', status: 'building', noteType: 'change' })
+    expect(res.card.title).toContain('Old heading')
+    expect(res.card.title).toContain('New heading')
+    const fix = getFixComment(db, res.card.id)
+    expect(fix.selector).toBe('main > h1')
+    // The fix session was actually spawned through the existing pipeline.
+    const prompt = fr.last().opts.prompt
+    expect(prompt).toContain('New heading')
+    expect(getSession(db, res.card.sessionId!).status).toBe('active')
+  })
+
+  it('identical text → no_change (no card created)', async () => {
+    await goLive()
+    const res = await call(CH.pointsRegisterTextEdit, {
+      projectId,
+      selector: 'main > h1',
+      oldText: 'Same',
+      newText: 'Same',
+    })
+    expect(res).toEqual({ error: 'no_change' })
+  })
+
+  it('whitespace-only newText → invalid_input', async () => {
+    await goLive()
+    const res = await call(CH.pointsRegisterTextEdit, {
+      projectId,
+      selector: 'main > h1',
+      oldText: 'Old',
+      newText: '   ',
+    })
+    expect(res).toEqual({ error: 'invalid_input' })
+  })
+
+  it('preview not live → preview_not_live', async () => {
+    const res = await call(CH.pointsRegisterTextEdit, {
+      projectId,
+      selector: 'main > h1',
+      oldText: 'Old',
+      newText: 'New',
+    })
+    expect(res).toEqual({ error: 'preview_not_live' })
+  })
+
+  it('unknown project → not_found', async () => {
+    const res = await call(CH.pointsRegisterTextEdit, {
+      projectId: 'nope',
+      selector: 'main > h1',
+      oldText: 'Old',
+      newText: 'New',
+    })
+    expect(res).toEqual({ error: 'not_found' })
+  })
+
+  it('activate when preview not live → webview_not_ready', async () => {
+    expect(await call(CH.pointsTextEditActivate, { projectId })).toEqual({
+      error: 'webview_not_ready',
+    })
+  })
+
+  it('a spawn failure rolls the just-created card back (no orphan) → session_error', async () => {
+    // Point the orchestrator at a dev manager whose artifact dir cannot be made,
+    // so startFix throws → the handler must delete the card it just created.
+    const { writeFileSync, mkdtempSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = mkdtempSync(join(tmpdir(), 'helm-te-'))
+    const blocker = join(dir, 'not-a-dir')
+    writeFileSync(blocker, 'x')
+    const badDev = new DevServerManager(db, () => {}, devDeps, join(blocker, 'projects'))
+    const badOrch = new SessionOrchestrator(db, () => null, fr.runner, badDev)
+    handlers.clear()
+    registerPointsBridge(db, { capture, devServer, orchestrator: badOrch, getWindow: () => null })
+    await goLive()
+    db.prepare('UPDATE projects SET artifact_dir = NULL WHERE id = ?').run(projectId)
+
+    const cardsBefore = (db.prepare('SELECT COUNT(*) AS n FROM cards WHERE project_id = ?').get(projectId) as { n: number }).n
+    const res = await call(CH.pointsRegisterTextEdit, {
+      projectId,
+      selector: 'main > h1',
+      oldText: 'Old',
+      newText: 'New',
+    })
+    expect(res).toEqual({ error: 'session_error' })
+    const cardsAfter = (db.prepare('SELECT COUNT(*) AS n FROM cards WHERE project_id = ?').get(projectId) as { n: number }).n
+    expect(cardsAfter).toBe(cardsBefore) // rolled back — no orphan
+    const orphanFix = db.prepare('SELECT COUNT(*) AS n FROM fix_comments WHERE project_id = ?').get(projectId) as { n: number }
+    expect(orphanFix.n).toBe(0)
+  })
+})
+
 describe('remaining contract errors + push shapes (Stage 4)', () => {
   it('points:list on a missing project → not_found', async () => {
     expect(await call(CH.pointsList, { projectId: 'nope' })).toEqual({ error: 'not_found' })

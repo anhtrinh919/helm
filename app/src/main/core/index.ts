@@ -106,7 +106,17 @@ export async function startCore(opts: CoreOptions): Promise<RunningCore> {
   registerImportBridge(db, devServer)
   registerPointsBridge(db, { capture: pointCapture, devServer, orchestrator, getWindow })
 
-  const server: RunningServer = await startServer({ port: opts.port, staticDir: opts.staticDir })
+  const server: RunningServer = await startServer({
+    port: opts.port,
+    staticDir: opts.staticDir,
+    // Preview proxy (Group 5): serve each project's live dev server same-origin
+    // under /preview/<projectId>/* so the browser surface can run the
+    // capture/inline-edit scripts. Null until the preview is `live`.
+    previewOrigin: (projectId) => {
+      const state = devServer.getState(projectId)
+      return state.status === 'live' ? state.url : null
+    },
+  })
 
   // Reconnect or restart each project's dev server so the Live Preview survives
   // a relaunch. Non-blocking — the server is already accepting requests.

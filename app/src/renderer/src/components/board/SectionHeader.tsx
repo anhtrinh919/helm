@@ -1,22 +1,34 @@
-/** A spine section divider: a labeled pill, a count, and a rule. */
+import { Icon } from '../ui/Icon'
+
+/** DOT-MATRIX section divider: uppercase label, count, and a hairline rule. */
 export function SectionHeader({
   label,
   count,
-  pill,
+  icon,
 }: {
   label: string
   count: number
-  pill: string
+  pill?: string // kept for backwards compat — not used in DOT-MATRIX
+  icon?: string
 }): React.JSX.Element {
   return (
-    <div className="flex items-center gap-3 pt-2">
-      <span className={`rounded-full brut-2 ${pill} px-3 py-1 text-[11px] font-bold tracking-[0.16em] text-ink`}>
-        {label}
-      </span>
-      <span className="grid h-6 min-w-6 place-items-center rounded-full bg-ink px-1.5 text-xs font-bold text-cream">
-        {count}
-      </span>
-      <span className="h-[2px] flex-1 rounded-full bg-ink/10" />
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '6px 4px',
+        fontSize: 12.5,
+        fontWeight: 700,
+        letterSpacing: '.05em',
+        textTransform: 'uppercase',
+        color: 'var(--ink-3)',
+      }}
+    >
+      {icon && <Icon n={icon} />}
+      {label}
+      <span style={{ color: 'var(--ink-4)' }}>· {count}</span>
+      <span style={{ flex: 1, height: '1.5px', background: 'var(--hair)', marginLeft: 4 }} />
     </div>
   )
 }

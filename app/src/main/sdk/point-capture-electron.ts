@@ -44,9 +44,15 @@ function adapt(contents: WebContents): GuestView {
 /** Track webview guests app-wide; expose them + live-preview URLs as deps. */
 export function defaultPointCaptureDeps(devServer: DevServerManager): PointCaptureDeps {
   const guests = new Set<WebContents>()
+  const reloadSubs = new Set<() => void>()
+  const fireReload = (): void => reloadSubs.forEach((cb) => cb())
   app.on('web-contents-created', (_e, contents) => {
     if (contents.getType() !== 'webview') return
     guests.add(contents)
+    // A reload/navigation in the embedded app destroys any injected editor — tell
+    // the capture service so it tears down its main-side state immediately.
+    contents.on('did-start-loading', fireReload)
+    contents.on('did-navigate', fireReload)
     contents.on('destroyed', () => guests.delete(contents))
   })
   return {
@@ -57,6 +63,10 @@ export function defaultPointCaptureDeps(devServer: DevServerManager): PointCaptu
     previewUrl: (projectId) => {
       const state = devServer.getState(projectId)
       return state.status === 'live' ? state.url : null
+    },
+    onGuestReload: (cb) => {
+      reloadSubs.add(cb)
+      return () => reloadSubs.delete(cb)
     },
   }
 }

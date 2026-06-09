@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Icon } from '../ui/Icon'
 import { isIpcError, type Card, type CardStatus } from '@shared/ipc-schemas'
 import { helm } from '../../bridge'
 import { useBoard } from '../../store/board'
@@ -6,7 +7,6 @@ import { useProjects } from '../../store/projects'
 import { Confetti } from '../Confetti'
 import { Rail } from '../Rail'
 import { TopBar } from './TopBar'
-import { TabStrip, type BoardTab } from './TabStrip'
 import { LivePreviewPane } from './LivePreviewPane'
 import { SectionHeader } from './SectionHeader'
 import { SpineItem } from './SpineItem'
@@ -18,41 +18,33 @@ import { usePointFix, NO_QUEUED } from '../../store/pins'
 import { DecisionsPanel } from './DecisionsPanel'
 import { ProgressPanel } from './ProgressPanel'
 import { DocsPanel } from './DocsPanel'
+import { JourneyStrip } from '../journey/JourneyStrip'
 
-/** Pull "N of M" out of a "Step N of M: ..." label for the in-flight eyebrow. */
-function stepOfM(card: Card | null, total: number, doneCount: number): string {
-  if (card?.stepLabel) {
-    const m = card.stepLabel.match(/Step\s+(\d+)\s+of\s+(\d+)/i)
-    if (m) return `STEP ${m[1]} OF ${m[2]} · IN FLIGHT`
-  }
-  if (doneCount >= total && total > 0) return 'ALL STEPS DONE'
-  return `${doneCount} OF ${total} DONE · READY`
-}
+type PanelTab = 'board' | 'decisions' | 'progress' | 'docs'
 
-// Board order (F50): BUILDING NOW → OFF-TRACK → NEEDS YOU → REPORTED → UP NEXT → PLANNED → DONE.
-const ORDER_TOP: CardStatus[] = ['building', 'failed']
-const ORDER_BOTTOM: CardStatus[] = ['up_next', 'planned', 'done']
-
-/** The hero screen: the build-spine board for one project. */
+/** The DOT-MATRIX Cockpit A board: card spine + live preview, with
+ *  the collapsed journey strip pinned at top in Build mode. */
 export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.Element {
-  const { projectName, cards, loadBoard, addCard, applyUpdate } = useBoard()
+  const { projectName, cards, loading, loadBoard, addCard, applyUpdate } = useBoard()
   const openSession = useProjects((s) => s.openSession)
-  const [tab, setTab] = useState<BoardTab>('board')
+  const backToSwitcher = useProjects((s) => s.backToSwitcher)
+  const projects = useProjects((s) => s.projects)
+  const project = projects.find((p) => p.id === projectId)
+
+  const [panelTab, setPanelTab] = useState<PanelTab>('board')
   const [adding, setAdding] = useState(false)
-  // Cards queued behind the running fix — pushed by main, never tracked locally.
+
   const queuedIds = usePointFix((s) => s.queued[projectId]) ?? NO_QUEUED
   const loadPins = usePointFix((s) => s.loadPins)
 
   useEffect(() => {
     void loadBoard(projectId)
-    void loadPins(projectId) // queue membership survives a board remount
+    void loadPins(projectId)
     return helm.events.onBoardUpdate((p) => {
       if (p.projectId === projectId) applyUpdate(p.card)
     })
   }, [projectId, loadBoard, loadPins, applyUpdate])
 
-  // Fix-comment cards live on their own REPORTED shelf (all statuses, F50–F55);
-  // they never mix into the build-spine sections.
   const reported = useMemo(() => cards.filter((c) => c.type === 'fix_comment'), [cards])
 
   const groups = useMemo(() => {
@@ -75,30 +67,12 @@ export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.El
   const startFix = async (cardId: string): Promise<void> => {
     const res = await helm.fixSessions.start(projectId, cardId)
     if (isIpcError(res)) return
-    // Queued: main pushes the new queue membership — nothing to track here.
     if (!res.queued) openSession(projectId, cardId)
   }
-
-  const titleOf = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const c of cards) m.set(c.id, c.title)
-    return m
-  }, [cards])
-
-  const depLabel = (c: Card): string | undefined => {
-    const first = c.dependsOn.find((id) => titleOf.has(id))
-    return first ? titleOf.get(first) : undefined
-  }
-
-  const building = groups.building[0] ?? null
-  const needsYou = groups.needs_you[0] ?? null
-  const doneCount = groups.done.length
-  const left = cards.length - doneCount
 
   const onAnswer = (cardId: string, answer: string): void => {
     const card = cards.find((c) => c.id === cardId)
     if (!card) return
-    // Optimistic: answering unblocks the card. The real resume arrives via board:update.
     applyUpdate({
       ...card,
       status: 'building',
@@ -106,117 +80,232 @@ export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.El
     })
   }
 
-  const SECTION_META: Partial<Record<CardStatus, { label: string; pill: string }>> = {
-    building: { label: 'BUILDING NOW', pill: 'bg-lime' },
-    failed: { label: 'OFF-TRACK', pill: 'bg-orange' },
-    up_next: { label: 'UP NEXT', pill: 'bg-bluesoft' },
-    planned: { label: 'PLANNED', pill: 'bg-cream' },
-    done: { label: 'DONE', pill: 'bg-mint' },
-  }
+  const building = groups.building[0] ?? null
+  const needsYou = groups.needs_you[0] ?? null
+  const openCount = cards.filter((c) => c.type !== 'fix_comment' && c.status !== 'done').length
+
+  const isBuildMode = project?.mode === 'build'
+  const isRailComplete = project?.railComplete ?? false
+  const showJourneyStrip = isBuildMode && isRailComplete
+
+  // In iterate mode show an add-card affordance
+  const isIterateMode = project?.mode === 'iterate'
+
+  // Active spine cards (not done, not fix_comment)
+  const activeCards = useMemo(() => {
+    const order: CardStatus[] = ['building', 'needs_you', 'failed', 'up_next', 'planned']
+    const result: Card[] = []
+    for (const status of order) {
+      result.push(...groups[status])
+    }
+    return result
+  }, [groups])
+
+  const doneCards = groups.done
+
+  // Panel nav items for the right-side tabs
+  const panelItems: { key: PanelTab; icon: string; label: string }[] = [
+    { key: 'decisions', icon: 'git-branch', label: 'Decisions' },
+    { key: 'progress', icon: 'chart-line-up', label: 'Progress' },
+    { key: 'docs', icon: 'book-open', label: 'Docs' },
+  ]
 
   return (
-    <div className="relative h-full w-full bg-canvas">
+    <div className="hm">
       <Confetti />
-      <div className="relative mx-auto flex h-full w-full max-w-[1640px] gap-6 p-6">
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        {/* Side rail */}
         <Rail activeProjectId={projectId} />
 
-        <main className="flex min-w-0 flex-1 flex-col gap-5 overflow-hidden">
-          <TopBar projectName={projectName} building={building} />
-          <TabStrip
-            active={tab}
-            onSelect={setTab}
-            trailing={tab === 'preview' ? <PointModeToggle projectId={projectId} /> : undefined}
+        {/* Main column */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          {/* Top bar */}
+          <TopBar
+            projectName={projectName}
+            building={building}
+            onBack={backToSwitcher}
           />
 
-          {tab === 'preview' ? (
-            <LivePreviewPane projectId={projectId} />
-          ) : tab === 'decisions' ? (
-            <DecisionsPanel projectId={projectId} />
-          ) : tab === 'progress' ? (
-            <ProgressPanel projectId={projectId} />
-          ) : tab === 'docs' ? (
-            <DocsPanel projectId={projectId} />
-          ) : (
-            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
-              {needsYou && <NeedsYouHeadline card={needsYou} onAnswer={onAnswer} />}
+          {/* Journey strip — only in Build mode, after journey is complete */}
+          {showJourneyStrip && project && (
+            <JourneyStrip project={project} />
+          )}
 
-              {/* Board header — eyebrow, headline, live counts, add. */}
-              <div className="flex items-end justify-between">
-                <div>
-                  <div className="text-[11px] font-black tracking-[0.16em] text-soft">
-                    {stepOfM(building, cards.length, doneCount)}
-                  </div>
-                  <div className="font-display text-2xl font-black text-ink">The build</div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-semibold text-soft">
-                    <b className="text-ink">{groups.building.length}</b> building ·{' '}
-                    <b className="text-ink">{doneCount}</b> done ·{' '}
-                    <b className="text-ink">{left}</b> left
-                  </span>
-                  <button
-                    onClick={() => setAdding(true)}
-                    className="rounded-full brut-2 bg-pink px-4 py-2 text-sm font-bold text-ink"
-                  >
-                    ＋ Add a card
-                  </button>
-                </div>
+          {/* Panel tab strip (Decisions / Progress / Docs) — shown above the split */}
+          {panelTab !== 'board' && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '0 20px',
+                borderBottom: '1.5px solid var(--frame)',
+                background: 'var(--surface)',
+                height: 42,
+                flexShrink: 0,
+              }}
+            >
+              <button
+                className="hm-btn hm-btn--sm hm-btn--ghost"
+                onClick={() => setPanelTab('board')}
+              >
+                <Icon n="arrow-left" />Back to board
+              </button>
+              {panelItems.map((it) => (
+                <button
+                  key={it.key}
+                  className={`hm-btn hm-btn--sm${panelTab === it.key ? '' : ' hm-btn--ghost'}`}
+                  onClick={() => setPanelTab(it.key)}
+                >
+                  <Icon n={it.icon} />{it.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Shell — card spine + live preview (or panel) */}
+          <div className="hm-shell" style={{ background: 'var(--surface-2)' }}>
+            {panelTab === 'decisions' ? (
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <DecisionsPanel projectId={projectId} />
               </div>
-
-              {cards.length === 0 && (
-                <div className="grid flex-1 place-items-center">
-                  <div className="rounded-[18px] brut border-dashed bg-cream/60 px-10 py-8 text-center">
-                    <div className="font-display text-xl font-black text-ink">Nothing on the board yet</div>
-                    <div className="mt-1.5 text-soft">Add the first thing you want built.</div>
-                  </div>
-                </div>
-              )}
-
-              {(() => {
-                const renderSection = (status: CardStatus): React.JSX.Element | null => {
-                  const items = groups[status]
-                  if (items.length === 0) return null
-                  const meta = SECTION_META[status]
-                  if (!meta) return null
-                  return (
-                    <section key={status} className="flex flex-col gap-2.5">
-                      <SectionHeader label={meta.label} count={items.length} pill={meta.pill} />
-                      {items.map((c) => (
-                        <SpineItem
-                          key={c.id}
-                          card={c}
-                          mode={
-                            status === 'building'
-                              ? 'spotlight'
-                              : status === 'done'
-                                ? 'condensed'
-                                : 'row'
-                          }
-                          depLabel={status === 'up_next' || status === 'planned' ? depLabel(c) : undefined}
-                          onOpen={(id) => openSession(projectId, id)}
-                          onRetry={(id) => openSession(projectId, id)}
-                        />
+            ) : panelTab === 'progress' ? (
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <ProgressPanel projectId={projectId} />
+              </div>
+            ) : panelTab === 'docs' ? (
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <DocsPanel projectId={projectId} />
+              </div>
+            ) : (
+              <>
+                {/* Card spine */}
+                <section
+                  style={{
+                    width: 392,
+                    flex: '0 0 392px',
+                    borderRight: '1.5px solid var(--frame)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    minHeight: 0,
+                  }}
+                >
+                  {/* Spine header */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '18px 20px 12px',
+                      gap: 8,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span style={{ fontSize: 15, fontWeight: 700 }}>Work</span>
+                    {openCount > 0 && (
+                      <span className="hm-chip">{openCount} open</span>
+                    )}
+                    {/* Panel shortcuts in the spine header */}
+                    <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                      {panelItems.map((it) => (
+                        <button
+                          key={it.key}
+                          className="hm-btn hm-btn--sm hm-btn--quiet"
+                          title={it.label}
+                          onClick={() => setPanelTab(it.key)}
+                        >
+                          <Icon n={it.icon} />
+                        </button>
                       ))}
-                    </section>
-                  )
-                }
-                return (
-                  <>
-                    {ORDER_TOP.map(renderSection)}
+                      <PointModeToggle projectId={projectId} />
+                    </span>
+                    {isIterateMode && (
+                      <button
+                        className="hm-btn hm-btn--sm"
+                        onClick={() => setAdding(true)}
+                        style={{ marginLeft: 4 }}
+                      >
+                        <Icon n="plus" />Add
+                      </button>
+                    )}
+                  </div>
 
-                    {/* REPORTED shelf (F50–F55) — collapses entirely when empty. */}
-                    {reported.length > 0 && (
-                      <section className="flex flex-col gap-2.5 rounded-[16px] brut-2 bg-pinksoft/60 p-3.5">
-                        <div className="flex items-baseline gap-2.5">
-                          <SectionHeader
-                            label="REPORTED"
-                            count={reported.length}
-                            pill="bg-pinksoft"
-                          />
-                          <span className="text-[11px] text-soft">
-                            things you pointed at in the live app
-                          </span>
+                  {/* Needs-you callout */}
+                  {needsYou && (
+                    <div style={{ padding: '0 20px 12px', flexShrink: 0 }}>
+                      <NeedsYouHeadline card={needsYou} onAnswer={onAnswer} />
+                    </div>
+                  )}
+
+                  {/* Scrollable card list */}
+                  <div
+                    style={{
+                      flex: 1,
+                      overflowY: 'auto',
+                      padding: '4px 20px 20px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 10,
+                    }}
+                    className="hm-scroll-fade"
+                  >
+                    {loading && (
+                      <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--ink-3)' }}>
+                        <div className="hm-thinking">
+                          <i /><i /><i />
                         </div>
+                      </div>
+                    )}
+
+                    {!loading && cards.length === 0 && (
+                      <div
+                        style={{
+                          marginTop: 24,
+                          border: '1.5px dashed var(--line-2)',
+                          padding: '32px 20px',
+                          textAlign: 'center',
+                          color: 'var(--ink-3)',
+                        }}
+                      >
+                        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--ink-2)', marginBottom: 6 }}>
+                          {isIterateMode
+                            ? 'Add your first feature to get started'
+                            : 'Your build plan will appear here'}
+                        </div>
+                        <div style={{ fontSize: 12.5, color: 'var(--ink-4)' }}>
+                          {isIterateMode
+                            ? 'Describe anything you want built and Helm will take it from here.'
+                            : 'Once you complete the guided journey setup, your cards will appear.'}
+                        </div>
+                        {isIterateMode && (
+                          <button
+                            className="hm-btn hm-btn--sm hm-btn--primary"
+                            style={{ marginTop: 16 }}
+                            onClick={() => setAdding(true)}
+                          >
+                            <Icon n="plus" />Add first request
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {!loading && activeCards.length > 0 && (
+                      <>
+                        {activeCards.map((c) => (
+                          <SpineItem
+                            key={c.id}
+                            card={c}
+                            mode={c.status === 'building' ? 'spotlight' : 'row'}
+                            onOpen={(id) => openSession(projectId, id)}
+                            onRetry={(id) => openSession(projectId, id)}
+                          />
+                        ))}
+                      </>
+                    )}
+
+                    {/* Reported / fix-comment shelf */}
+                    {reported.length > 0 && (
+                      <div style={{ marginTop: 4 }}>
+                        <SectionHeader label="Reported" count={reported.length} icon="cursor-click" />
                         {reported.map((c) => (
                           <FixCommentCard
                             key={c.id}
@@ -226,16 +315,61 @@ export function ProjectBoard({ projectId }: { projectId: string }): React.JSX.El
                             onOpen={(id) => openSession(projectId, id)}
                           />
                         ))}
-                      </section>
+                      </div>
                     )}
 
-                    {ORDER_BOTTOM.map(renderSection)}
-                  </>
-                )
-              })()}
-            </div>
-          )}
-        </main>
+                    {/* Done history — condensed rows */}
+                    {doneCards.length > 0 && (
+                      <div style={{ marginTop: doneCards.length > 0 ? 6 : 0 }}>
+                        <SectionHeader label="Done" count={doneCards.length} icon="check-circle" />
+                        <div
+                          style={{
+                            background: 'var(--surface-3)',
+                            border: '1.5px solid var(--frame)',
+                          }}
+                        >
+                          {doneCards.map((c) => (
+                            <SpineItem
+                              key={c.id}
+                              card={c}
+                              mode="condensed"
+                              onOpen={(id) => openSession(projectId, id)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Iterate mode: add-card tile at bottom */}
+                    {isIterateMode && cards.length > 0 && (
+                      <div
+                        style={{
+                          border: '1.5px dashed var(--line-2)',
+                          display: 'grid',
+                          placeItems: 'center',
+                          minHeight: 88,
+                          color: 'var(--ink-3)',
+                          cursor: 'pointer',
+                          gap: 6,
+                          background: 'rgba(255,255,255,.4)',
+                        }}
+                        onClick={() => setAdding(true)}
+                      >
+                        <Icon n="plus-circle" size={22} />
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>Add a request</span>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                {/* Live preview */}
+                <main style={{ flex: 1, minWidth: 0, display: 'flex' }}>
+                  <LivePreviewPane projectId={projectId} />
+                </main>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       {adding && (

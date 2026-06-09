@@ -3,6 +3,12 @@ import { readFile } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { bus, UnknownChannelError, type PushClient } from './transport'
+import {
+  INSTALL_SCRIPT,
+  REMOVE_SCRIPT,
+  TEXT_EDIT_INSTALL_SCRIPT,
+  TEXT_EDIT_REMOVE_SCRIPT,
+} from '../sdk/point-capture-service'
 
 /**
  * The local `helm` HTTP + WebSocket server (Phase 1, Group 0).
@@ -24,6 +30,15 @@ export interface ServerOptions {
   port?: number
   /** Built-renderer directory to serve in production. Omit in dev (Vite serves). */
   staticDir?: string
+  /**
+   * Preview proxy resolver (Group 5). Given a project id, returns its live
+   * dev-server origin (e.g. `http://localhost:5173`) or null when the preview is
+   * not live. `GET /preview/<projectId>/*` is reverse-proxied to that origin so
+   * the user's running app is served same-origin with the Helm UI — which lets
+   * the click-capture + inline-edit scripts run in a plain browser (the same
+   * affordance Electron's <webview> gets for free). Omit to disable proxying.
+   */
+  previewOrigin?: (projectId: string) => string | null
 }
 
 export interface RunningServer {
@@ -116,12 +131,103 @@ async function serveStatic(res: ServerResponse, staticDir: string, urlPath: stri
   }
 }
 
+/**
+ * The capture/edit scripts, exposed to the proxied page as togglable globals so
+ * the same-origin Helm UI can drive point-mode + inline-edit in a plain browser
+ * exactly as the Electron <webview> path does. Reporting still flows over the
+ * existing `__HELM_POINT__` / `__HELM_TEXTEDIT__` console channel; the same-origin
+ * parent reads it and forwards to the core via the existing `points.*` helm calls.
+ */
+const HELM_PREVIEW_BRIDGE = `<script>(function(){
+  if (window.__helmPreviewBridge) return;
+  window.__helmPreviewBridge = true;
+  window.__helmInstallPoint = function(){ ${INSTALL_SCRIPT} };
+  window.__helmRemovePoint = function(){ ${REMOVE_SCRIPT} };
+  window.__helmInstallTextEdit = function(){ ${TEXT_EDIT_INSTALL_SCRIPT} };
+  window.__helmRemoveTextEdit = function(){ ${TEXT_EDIT_REMOVE_SCRIPT} };
+})();</script>`
+
+function injectBridge(html: string): string {
+  // Inject right after <head> so the helpers exist before app scripts; fall back
+  // to prepending if there is no <head> (fragment / unusual document).
+  const headOpen = html.match(/<head[^>]*>/i)
+  if (headOpen && headOpen.index != null) {
+    const at = headOpen.index + headOpen[0].length
+    return html.slice(0, at) + HELM_PREVIEW_BRIDGE + html.slice(at)
+  }
+  return HELM_PREVIEW_BRIDGE + html
+}
+
+/**
+ * Reverse-proxy `GET /preview/<projectId>/<rest>` to the project's live dev
+ * server, injecting the capture/edit bridge into the TOP-LEVEL HTML document.
+ * Sub-resources (JS/CSS/assets/XHR) are passed through verbatim. The dev server
+ * is on 127.0.0.1; nothing here widens the bind.
+ *
+ * Limitation (documented, not faked): only the top-level HTML document is
+ * rewritten to carry the bridge. Same-origin sub-documents/iframes inside the
+ * app are proxied but not separately rewritten — the common SPA case (one root
+ * document) is fully covered; deeply nested cross-document apps would need
+ * per-frame injection, which is out of scope for this group.
+ */
+async function handlePreview(
+  req: IncomingMessage,
+  res: ServerResponse,
+  rest: string,
+  resolveOrigin: (projectId: string) => string | null,
+): Promise<void> {
+  const slash = rest.indexOf('/')
+  const projectId = slash === -1 ? rest : rest.slice(0, slash)
+  const subPath = slash === -1 ? '/' : rest.slice(slash)
+  if (!projectId) {
+    sendJson(res, 404, { error: 'unknown_preview' })
+    return
+  }
+  const origin = resolveOrigin(projectId)
+  if (!origin) {
+    sendJson(res, 503, { error: 'preview_not_live' })
+    return
+  }
+  const query = (req.url ?? '').includes('?') ? '?' + (req.url ?? '').split('?').slice(1).join('?') : ''
+  const target = origin.replace(/\/$/, '') + subPath + query
+
+  let upstream: Response
+  try {
+    upstream = await fetch(target, {
+      method: req.method ?? 'GET',
+      headers: { accept: req.headers.accept ?? '*/*' },
+      redirect: 'manual',
+    })
+  } catch {
+    sendJson(res, 502, { error: 'preview_unreachable' })
+    return
+  }
+
+  const contentType = upstream.headers.get('content-type') ?? 'application/octet-stream'
+  const isHtml = contentType.includes('text/html')
+  if (isHtml) {
+    const html = await upstream.text()
+    const body = injectBridge(html)
+    res.writeHead(upstream.status, { 'content-type': 'text/html; charset=utf-8' })
+    res.end(body)
+    return
+  }
+  // Pass-through for everything else (JS/CSS/assets), preserving content-type.
+  const buf = Buffer.from(await upstream.arrayBuffer())
+  res.writeHead(upstream.status, { 'content-type': contentType })
+  res.end(buf)
+}
+
 export async function startServer(opts: ServerOptions = {}): Promise<RunningServer> {
   const httpServer: Server = createServer((req, res) => {
     const url = req.url ?? '/'
     const path = url.split('?')[0] ?? '/'
     if (path.startsWith('/helm/')) {
       void handleHelm(req, res, path.slice('/helm/'.length))
+      return
+    }
+    if (path.startsWith('/preview/') && opts.previewOrigin) {
+      void handlePreview(req, res, path.slice('/preview/'.length), opts.previewOrigin)
       return
     }
     if (opts.staticDir) {

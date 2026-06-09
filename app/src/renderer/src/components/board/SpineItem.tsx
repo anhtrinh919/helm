@@ -1,28 +1,25 @@
+import { Icon } from '../ui/Icon'
 import type { Card, CardStatus } from '@shared/ipc-schemas'
 
-/** Pull the "Step N of M" prefix out of a stepLabel; fall back for user-added cards. */
-function stepPrefix(card: Card): string {
-  if (card.stepLabel) {
-    const colon = card.stepLabel.indexOf(':')
-    return colon > 0 ? card.stepLabel.slice(0, colon) : card.stepLabel
-  }
-  return card.type === 'bug' ? 'Bug' : 'Your idea'
+/** Map card status → DOT-MATRIX state name and card class modifier. */
+const STATE_META: Record<
+  CardStatus,
+  { label: string; icon: string; cls: string }
+> = {
+  planned:   { label: 'Planned',        icon: 'circle-dashed',        cls: '' },
+  up_next:   { label: 'Up next',        icon: 'arrow-bend-down-right', cls: 'is-upnext' },
+  building:  { label: 'Building',       icon: 'circle-notch',         cls: 'is-building' },
+  needs_you: { label: 'Needs you',      icon: 'hand-tap',             cls: 'is-needs' },
+  failed:    { label: "Couldn't finish", icon: 'warning-circle',       cls: 'is-fail' },
+  done:      { label: 'Done',           icon: 'check-circle',         cls: '' },
+  waiting:   { label: 'Waiting',        icon: 'circle-dashed',        cls: '' },
 }
 
-function StatusPill({ status }: { status: CardStatus }): React.JSX.Element {
-  const map: Record<CardStatus, [string, string]> = {
-    planned: ['PLANNED', 'bg-cream'],
-    up_next: ['UP NEXT', 'bg-bluesoft'],
-    building: ['BUILDING', 'bg-lime'],
-    needs_you: ['NEEDS YOU', 'bg-pink'],
-    failed: ['OFF-TRACK', 'bg-orange'],
-    done: ['DONE', 'bg-mint'],
-    waiting: ['REPORTED', 'bg-cream'],
-  }
-  const [label, bg] = map[status]
+/** The null empty-state for outcome — shown when outcome is not yet set. */
+function OutcomeEmpty(): React.JSX.Element {
   return (
-    <span className={`shrink-0 rounded-full brut-2 ${bg} px-2.5 py-1 text-[10px] font-black tracking-wide text-ink`}>
-      {label}
+    <span style={{ color: 'var(--ink-4)', fontStyle: 'italic' }}>
+      What this delivers will appear here once the build starts.
     </span>
   )
 }
@@ -35,107 +32,97 @@ export interface SpineItemProps {
   onRetry?: (cardId: string) => void
 }
 
-export function SpineItem({ card, mode, depLabel, onOpen, onRetry }: SpineItemProps): React.JSX.Element {
-  // Failed item — its own bold treatment, regardless of requested mode.
-  if (card.status === 'failed') {
-    return (
-      <div className="rounded-[18px] brut bg-orangesoft p-5">
-        <div className="flex items-start gap-3">
-          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full brut-2 bg-orange font-display text-base font-black text-ink">
-            !
-          </div>
-          <div className="flex-1">
-            <div className="text-[11px] font-bold tracking-wide text-ink/70">{stepPrefix(card)}</div>
-            <div className="font-display text-xl font-black text-ink">{card.title}</div>
-            <div className="mt-1 text-sm text-soft">Something blocked this — I stopped so nothing breaks.</div>
-          </div>
-        </div>
-        <div className="mt-4 flex gap-2">
-          <button
-            onClick={() => onRetry?.(card.id)}
-            className="rounded-full brut-2 bg-ink px-4 py-2 text-sm font-bold text-cream"
-          >
-            Try again
-          </button>
-          <button
-            onClick={() => onOpen(card.id)}
-            className="rounded-full brut-2 bg-cream px-4 py-2 text-sm font-bold text-ink"
-          >
-            Tell me more
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  if (mode === 'spotlight') {
-    return (
-      <div className="rounded-[18px] brut bg-lime p-5">
-        <div className="flex items-start gap-3">
-          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full brut-2 bg-cream font-display text-base font-black text-ink">
-            {card.position + 1}
-          </div>
-          <div className="flex-1">
-            <div className="text-[11px] font-bold tracking-wide text-ink/70">{stepPrefix(card)}</div>
-            <div className="font-display text-2xl font-black leading-tight text-ink">{card.title}</div>
-          </div>
-          <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-ink px-2.5 py-1 text-[10px] font-black text-cream">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-lime" /> LIVE
-          </span>
-        </div>
-        {/* Indeterminate activity — deliberately not a fabricated percentage. */}
-        <div className="mt-4 h-2 overflow-hidden rounded-full bg-cream">
-          <div className="h-full w-1/3 animate-[helmslide_1.6s_ease-in-out_infinite] rounded-full bg-pink" />
-        </div>
-        <div className="mt-3 flex items-center justify-between">
-          <span className="flex items-center gap-2 text-sm font-semibold text-ink">
-            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-blue" /> Working on it now
-          </span>
-          <button
-            onClick={() => onOpen(card.id)}
-            className="flex items-center gap-1.5 rounded-full brut-2 bg-ink px-4 py-2 text-sm font-bold text-cream"
-          >
-            Open <span aria-hidden>→</span>
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  if (mode === 'condensed') {
-    return (
-      <button
-        onClick={() => onOpen(card.id)}
-        className="flex w-full items-center gap-3 rounded-[12px] border-2 border-ink/15 bg-cream/40 px-4 py-2 text-left"
-      >
-        <span className="grid h-5 w-5 place-items-center rounded-full bg-mint text-[11px] font-black text-ink">✓</span>
-        <span className="flex-1 truncate text-sm font-medium text-ink/55">{card.title}</span>
-        <span className="text-[10px] font-bold tracking-wide text-ink/40">DONE</span>
-      </button>
-    )
-  }
-
-  // row mode (planned / up_next)
+/** A condensed done row — quiet history. */
+function DoneRow({ card, onOpen }: { card: Card; onOpen: (id: string) => void }): React.JSX.Element {
   return (
-    <button
+    <div
+      className="hm-card hm-card--done"
       onClick={() => onOpen(card.id)}
-      className="flex w-full items-center gap-3 rounded-[14px] brut-2 bg-cream px-4 py-3 text-left transition hover:-translate-y-0.5"
+      style={{ cursor: 'pointer' }}
     >
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-ink/20 text-sm font-black text-ink">
-        {card.position + 1}
+      <span className="hm-check">
+        <Icon n="check" />
       </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate font-semibold text-ink">{card.title}</span>
-          {depLabel && (
-            <span className="shrink-0 rounded-full bg-ink/5 px-2 py-0.5 text-[10px] font-medium text-soft">
-              needs {depLabel}
-            </span>
-          )}
-        </div>
-        <div className="text-xs text-soft">{stepPrefix(card)}</div>
-      </div>
-      <StatusPill status={card.status} />
-    </button>
+      <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.3, minWidth: 0, flex: 1 }}>
+        <span className="t">{card.title}</span>
+        <span className="o">{card.outcome ?? 'Done'}</span>
+      </span>
+      <Icon n="arrow-counter-clockwise" size={15} />
+    </div>
   )
+}
+
+/** A full work card — the core Cockpit A primitive. */
+function WorkCard({
+  card,
+  onOpen,
+  onRetry,
+}: {
+  card: Card
+  onOpen: (id: string) => void
+  onRetry?: (id: string) => void
+}): React.JSX.Element {
+  const m = STATE_META[card.status] ?? STATE_META.planned
+
+  return (
+    <div className={`hm-card ${m.cls}`} style={{ cursor: 'pointer' }} onClick={() => onOpen(card.id)}>
+      <div className="hm-card__top">
+        <span className="hm-card__state">
+          <Icon n={m.icon} size={14} />
+          {m.label}
+        </span>
+        <span
+          className="hm-card__menu"
+          onClick={(e) => { e.stopPropagation(); onOpen(card.id) }}
+        >
+          <Icon n="dots-three" />
+        </span>
+      </div>
+      <div className="hm-card__title">{card.title}</div>
+      <div className="hm-card__outcome">
+        <Icon n="arrow-bend-down-right" size={15} />
+        <span>{card.outcome !== null && card.outcome !== '' ? card.outcome : <OutcomeEmpty />}</span>
+      </div>
+
+      {card.status === 'building' && (
+        <div className="hm-buildbar"><i /></div>
+      )}
+
+      {card.status === 'failed' && (
+        <div
+          className="hm-callout hm-callout--fail"
+          style={{ marginTop: 13, padding: '11px 13px', fontSize: 13 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="hm-callout__ic"><Icon n="info" /></span>
+          <span>
+            Something blocked this step.{' '}
+            <b
+              style={{ cursor: 'pointer', color: 'var(--fail)' }}
+              onClick={(e) => { e.stopPropagation(); onRetry?.(card.id) }}
+            >
+              Try again
+            </b>{' '}
+            or open for details.
+          </span>
+        </div>
+      )}
+
+      {card.status === 'needs_you' && card.decisionPrompt && (
+        <div className="hm-card__foot">
+          <span style={{ fontSize: 13, color: 'var(--needs)', fontWeight: 700 }}>
+            {card.decisionPrompt.question}
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** SpineItem: routes to the right card shape based on mode/status. */
+export function SpineItem({ card, mode, onOpen, onRetry }: SpineItemProps): React.JSX.Element {
+  if (mode === 'condensed' || card.status === 'done') {
+    return <DoneRow card={card} onOpen={onOpen} />
+  }
+  return <WorkCard card={card} onOpen={onOpen} onRetry={onRetry} />
 }

@@ -1,53 +1,33 @@
-import { useEffect, useState } from 'react'
+import { Icon } from '../ui/Icon'
 import type { Card } from '@shared/ipc-schemas'
 
-function useElapsed(since: number | null): string {
-  const [, tick] = useState(0)
-  useEffect(() => {
-    if (since === null) return
-    const id = setInterval(() => tick((n) => n + 1), 1000)
-    return () => clearInterval(id)
-  }, [since])
-  if (since === null) return ''
-  const secs = Math.max(0, Math.floor((Date.now() - since) / 1000))
-  const m = Math.floor(secs / 60)
-  const s = secs % 60
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
-
 /**
- * The board's top bar: project name on the left, a live "what's building now"
- * banner + the user's avatar on the right. The banner only appears while a card
- * is actively building — it's the at-a-glance heartbeat of the dashboard.
+ * The DOT-MATRIX top bar: back chevron, breadcrumb, spacer,
+ * optional right slot, and the reserved Phase 2 Publish slot.
+ * `building` is kept as a prop so callers can pass the in-flight card
+ * for contextual use — not shown in the bar itself (the card spine shows it).
  */
 export function TopBar({
   projectName,
-  building,
+  building: _building,
+  onBack,
 }: {
   projectName: string
   building: Card | null
+  onBack?: () => void
 }): React.JSX.Element {
-  const elapsed = useElapsed(building ? building.updatedAt : null)
-
   return (
-    <div className="flex items-center justify-between gap-4">
-      <div className="min-w-0 truncate font-display text-3xl font-black leading-none text-ink">
-        {projectName}
+    <div className="hm-top">
+      <div className="hm-top__back" onClick={onBack} style={{ cursor: onBack ? 'pointer' : 'default' }}>
+        <Icon n="arrow-left" />
       </div>
-
-      <div className="flex shrink-0 items-center gap-3">
-        {building && (
-          <div className="flex items-center gap-2.5 rounded-full brut-2 bg-cream px-3.5 py-2">
-            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-lime" />
-            <span className="text-sm font-semibold text-ink">Building {building.title}</span>
-            <span className="rounded-full bg-ink px-2 py-0.5 font-mono text-xs font-bold text-cream">
-              {elapsed}
-            </span>
-          </div>
-        )}
-        <div className="grid h-11 w-11 place-items-center rounded-full brut bg-violet font-display text-lg font-black text-cream">
-          T
-        </div>
+      <div className="hm-crumb">
+        <Icon n="house" size={16} />
+        <b>{projectName}</b>
+      </div>
+      <div className="hm-top__spacer" />
+      <div className="hm-slot-reserved">
+        <Icon n="rocket-launch" />Publish · Phase 2
       </div>
     </div>
   )
