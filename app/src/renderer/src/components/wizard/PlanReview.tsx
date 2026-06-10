@@ -11,27 +11,23 @@ export function PlanReview({
   name,
   plan,
   onName,
-  onPlan,
+  onRevise,
   onApprove,
-  onBack,
 }: {
   name: string
   plan: PlanBlock[]
   onName: (name: string) => void
-  onPlan: (plan: PlanBlock[]) => void
+  onRevise: (note: string) => void
   onApprove: () => void
-  onBack: () => void
 }): React.JSX.Element {
   const [revising, setRevising] = useState(false)
   const [reviseText, setReviseText] = useState('')
 
   const submitRevise = (): void => {
     if (!reviseText.trim()) return
-    // Pass the revision note as the last block's detail as a lightweight signal;
-    // the store's editPlan + retry handles regeneration. We surface it by calling
-    // onPlan with the revision note appended, then calling onBack (which calls retry).
-    onPlan([...plan, { id: crypto.randomUUID(), title: `Revision: ${reviseText.trim()}`, detail: '' }])
-    onBack()
+    // Hand the change note to the live scoping session, which regenerates the plan
+    // in place. The interview is NOT re-run.
+    onRevise(reviseText.trim())
   }
 
   return (

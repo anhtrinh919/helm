@@ -184,9 +184,8 @@ export function WizardScreen({ projectId }: { projectId: string }): React.JSX.El
   const answer = useWizard((s) => s.answer)
   const answerBatch = useWizard((s) => s.answerBatch)
   const approve = useWizard((s) => s.approve)
-  const editPlan = useWizard((s) => s.editPlan)
+  const revisePlan = useWizard((s) => s.revisePlan)
   const setName = useWizard((s) => s.setName)
-  const retry = useWizard((s) => s.retry)
 
   if (step === 'idea') {
     return <IdeaStep />
@@ -233,9 +232,8 @@ export function WizardScreen({ projectId }: { projectId: string }): React.JSX.El
           name={name}
           plan={plan}
           onName={setName}
-          onPlan={editPlan}
+          onRevise={(note) => void revisePlan(note)}
           onApprove={() => void approve()}
-          onBack={() => void retry()}
         />
       </WizardShell>
     )

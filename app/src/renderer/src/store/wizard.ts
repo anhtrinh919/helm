@@ -40,6 +40,9 @@ interface WizardState {
   answerBatch: (answers: string[]) => Promise<void>
   approve: () => Promise<void>
   editPlan: (plan: PlanBlock[]) => void
+  /** Feed a change note to the live scoping session and regenerate the plan in
+   *  place — no re-running the question interview. */
+  revisePlan: (note: string) => Promise<void>
   setName: (name: string) => void
   retry: () => Promise<void>
   reset: () => void
@@ -232,6 +235,24 @@ export const useWizard = create<WizardState>((set, get) => {
       set({ plan })
       persist()
     },
+
+    revisePlan: async (note) => {
+      const sid = get().sessionId
+      if (!sid || !note.trim()) return
+      // Same live session that produced the plan — ask it to adjust the plan from
+      // the user's note. Go to the thinking state (no plan, no question) meanwhile.
+      set({ step: 'scoping', question: null, questions: null, plan: null })
+      const msg =
+        `Revise the plan based on this feedback, then reply with ONLY the updated ` +
+        `plan JSON in the same format (do not ask any more questions): ${note.trim()}`
+      const res = await helm.wizard.answerScoping(sid, msg)
+      if (isIpcError(res)) {
+        set({ step: 'error' })
+        return
+      }
+      apply(res)
+    },
+
     setName: (name) => {
       set({ name })
       persist()
