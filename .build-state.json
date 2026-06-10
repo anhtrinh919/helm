@@ -1,7 +1,7 @@
 {
   "phase": 1,
   "feature": "cockpit-and-journey",
-  "step": "backend-complete",
+  "step": "phase-complete",
   "reviewIteration": 0,
   "requirementsHash": "c3bbe5cf101f149c1c78e9cb5473781fc7a2a31e269e16d6f8e66c61fea0b640",
   "currentSubStep": null,

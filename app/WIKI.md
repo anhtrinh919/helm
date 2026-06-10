@@ -2,6 +2,11 @@
 # Project WIKI — app
 *Seeded from global wiki on 2026-06-10. Relevant to: @anthropic-ai/claude-agent-sdk, better-sqlite3, ws, zod, zustand, @electron/rebuild, @tailwindcss/vite, @types/better-sqlite3, @types/node, @types/react, @types/react-dom, @types/ws, @vitejs/plugin-react, electron, electron-vite, react, react-dom, tailwindcss, tsx, typescript, vite, vitest. 30 entries.*
 
+## Claude-agent-sdk
+
+### Agent-emitted JSON breaks on unescaped inner double-quotes in label text
+When a Claude agent is told to reply with a single JSON object (e.g. scoping ask_batch with button options), it will occasionally put unescaped double-quotes inside a string value (saw: a label like Show "full" and close), which makes JSON.parse fail and silently degrades to a fallback. extractJson strips code fences but cannot repair invalid JSON. Fix at the prompt layer: instruct 'raw JSON only, never put a double-quote character inside any text value, keep labels plain'. This is far more reliable than trying to repair the JSON after the fact. Watch for it on any structured-output-via-narration path.
+
 ## Typescript
 
 ### Phase 1 frontend: external-pencil .pen read directly as JSON (schema 2.13) on macOS; design diverged → reconcile spec to canon
@@ -128,8 +133,3 @@ When browse-dogfooding a UI whose tabs/buttons are drag-enabled (e.g. SheetTabBa
 
 ### Stale server on a fixed port silently serves old code during integration tests
 A backgrounded 'tsx server/index.ts' that fails to bind (EADDRINUSE) exits silently while an older server keeps the port. Integration probes then hit STALE code and you chase phantom bugs (saw a THB report render 'Amount (VND)' that was actually correct in current code). Before integration testing always: lsof -nP -iTCP:PORT -sTCP:LISTEN -t | xargs kill -9, then start one fresh server and confirm via the startup log line, not just /api/health.
-
-## Vite
-
-### Verify zustand-store UI on a production preview, not the HMR dev server
-When you edit a zustand store module (and its subscribers) many times in one session, Vite HMR can fragment the store into two live instances: a subscription closure writes events into instance A while the rendered component reads instance B. Symptom: appendEvent/set is provably called (logs fire) but the UI stays frozen and state never advances — looks like a broken subscription or stale closure. It is neither. Confirm by serving the production build (npx vite preview) on a fresh port: the bug vanishes. Don't burn time debugging the dev server after heavy store edits — hard-reload or preview first. Also: React StrictMode double-invokes effects, so an open()-on-mount that mutates shared state (e.g. card.sessionId) runs twice; make such effects idempotent and backfill the feed on every (re)subscribe so a push missed during the teardown gap self-heals.
