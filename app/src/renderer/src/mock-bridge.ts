@@ -574,6 +574,10 @@ export function createMockBridge(): HelmApi {
         }
         return { kind: 'plan' as const, sessionId, name: niceName(ws.idea), plan: scriptedPlan() }
       },
+      revisePlan: async (_projectId, _idea, _mode, name, plan, _note) => {
+        // Stateless by design — echoes the plan back under a fresh session id.
+        return { kind: 'plan' as const, sessionId: uid(), name, plan }
+      },
       approvePlan: async (projectId, name, plan) => {
         const project = projects.find((p) => p.id === projectId)
         if (!project) return { error: 'not_found' }

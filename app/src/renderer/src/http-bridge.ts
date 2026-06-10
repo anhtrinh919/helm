@@ -105,6 +105,8 @@ export function createHttpBridge(): HelmApi {
     wizard: {
       startScoping: (projectId, idea, mode) => post(CH.wizardStartScoping, { projectId, idea, mode }),
       answerScoping: (sessionId, answer) => post(CH.wizardAnswer, { sessionId, answer }),
+      revisePlan: (projectId, idea, mode, name, plan, note) =>
+        post(CH.wizardRevise, { projectId, idea, mode, name, plan, note }),
       approvePlan: (projectId, name, plan) => post(CH.wizardApprove, { projectId, name, plan }),
       saveState: (projectId, state) => post(CH.wizardSaveState, { projectId, state }),
       getState: (projectId) => post(CH.wizardGetState, { projectId }),

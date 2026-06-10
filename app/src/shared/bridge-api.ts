@@ -107,6 +107,17 @@ export interface HelmApi {
     ): Promise<Result<WizardScopingResponse>>
     /** Answer the current scoping question; returns the next question or the finished plan. */
     answerScoping(sessionId: string, answer: string): Promise<Result<WizardScopingResponse>>
+    /** Regenerate the plan from a change note WITHOUT re-running the interview.
+     *  A fresh one-shot session is seeded with the plan-in-hand, so this works
+     *  even after the local core was restarted. Returns the revised plan. */
+    revisePlan(
+      projectId: string,
+      idea: string,
+      mode: ProjectMode | undefined,
+      name: string,
+      plan: PlanBlock[],
+      note: string,
+    ): Promise<Result<WizardScopingResponse>>
     /** Approve the plan: seeds the board and names the project. */
     approvePlan(
       projectId: string,

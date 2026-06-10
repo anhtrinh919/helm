@@ -154,6 +154,48 @@ describe('WizardOrchestrator', () => {
     expect(plan.reply.kind).toBe('plan')
   })
 
+  it('revises the plan in place without re-running the interview', async () => {
+    const fr = fakeRunner()
+    const orch = new WizardOrchestrator(db, fr.runner)
+    const project = createProject(db, 'tmp')
+    const current = [{ id: 'a', title: 'Shell' }, { id: 'b', title: 'Entries' }]
+
+    const p = orch.revisePlan(project.id, 'a budgeting app', 'build', current, 'Budgeteer', 'add a chart')
+    turn(fr.cb(), '{"plan":{"name":"Budgeteer","steps":[{"title":"Shell"},{"title":"Entries"},{"title":"Chart"}]}}')
+    const out = await p
+    expect(out.reply.kind).toBe('plan')
+    if (out.reply.kind === 'plan') expect(out.reply.plan.map((b) => b.title)).toEqual(['Shell', 'Entries', 'Chart'])
+  })
+
+  it('keeps the current plan when a revision turn yields no usable plan', async () => {
+    const fr = fakeRunner()
+    const orch = new WizardOrchestrator(db, fr.runner)
+    const project = createProject(db, 'tmp')
+    const current = [{ id: 'a', title: 'Shell' }, { id: 'b', title: 'Entries' }]
+
+    const p = orch.revisePlan(project.id, 'a budgeting app', 'build', current, 'Budgeteer', 'add a chart')
+    turn(fr.cb(), 'Sure, let me ask you a question instead of returning a plan.')
+    const out = await p
+    expect(out.reply.kind).toBe('plan')
+    if (out.reply.kind === 'plan') {
+      expect(out.reply.name).toBe('Budgeteer')
+      expect(out.reply.plan.map((b) => b.title)).toEqual(['Shell', 'Entries'])
+    }
+  })
+
+  it('keeps the current plan when a revision session crashes', async () => {
+    const fr = fakeRunner()
+    const orch = new WizardOrchestrator(db, fr.runner)
+    const project = createProject(db, 'tmp')
+    const current = [{ id: 'a', title: 'Shell' }]
+
+    const p = orch.revisePlan(project.id, 'a budgeting app', 'build', current, 'Budgeteer', 'add a chart')
+    fr.cb().onError('engine died')
+    const out = await p
+    expect(out.reply.kind).toBe('plan')
+    if (out.reply.kind === 'plan') expect(out.reply.plan.map((b) => b.title)).toEqual(['Shell'])
+  })
+
   it('degrades an unparseable turn to a follow-up question, not a dead-end', async () => {
     const fr = fakeRunner()
     const orch = new WizardOrchestrator(db, fr.runner)

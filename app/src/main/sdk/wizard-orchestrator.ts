@@ -69,6 +69,29 @@ function scopingPrompt(idea: string, mode: ProjectMode = 'build'): string {
   ].join(' ')
 }
 
+/** Prompt for an in-place plan revision — no questions, just the adjusted plan.
+ *  Seeded with the plan-in-hand so it needs no prior conversation state. */
+function revisePrompt(
+  idea: string,
+  mode: ProjectMode,
+  plan: PlanBlock[],
+  name: string,
+  note: string,
+): string {
+  const steps = plan.map((b, i) => `${i + 1}. ${b.title}${b.detail ? ` — ${b.detail}` : ''}`).join('  ')
+  const stepCount = mode === 'iterate' ? 'EXACTLY 1 step' : '4-7 steps'
+  const jsonRule = `Output RAW JSON only — no code fences, no prose. Never put a double-quote character inside any title or detail text so the JSON always parses.`
+  return [
+    `A non-technical person has this build plan for their app "${idea}" (named "${name}"):`,
+    steps,
+    `They want to change it: "${note}".`,
+    `Revise the plan to reflect that change — keep the steps that still apply, and adjust, add, or remove as needed.`,
+    `Reply with ONLY a single JSON object in this format: {"plan":{"name":"<short product name, 1-4 words>","steps":[{"title":"<short>","detail":"<one sentence>"}]}} with ${stepCount}.`,
+    `Keep the existing name "${name}" unless the change clearly renames the product. Do NOT ask any questions.`,
+    jsonRule,
+  ].join(' ')
+}
+
 // extractJson lives in ./json-extract (shared with the build-session transformer).
 export { extractJson }
 
@@ -168,6 +191,11 @@ interface WizardSession {
   pending: { resolve: (r: ScopingReply) => void } | null
   timer: ReturnType<typeof setTimeout> | null
   settled: boolean
+  /** Revision sessions want a plan and nothing else — no questions, no dead-end. */
+  planOnly: boolean
+  /** On a plan-only session, the plan to fall back to if the agent doesn't return one. */
+  fallbackPlan: PlanBlock[] | null
+  fallbackName: string
 }
 
 export class WizardOrchestrator {
@@ -178,11 +206,14 @@ export class WizardOrchestrator {
     private runner: Runner = startSession,
   ) {}
 
-  async startScoping(
+  /** Open a fresh scoping/revision session, wire it, and await its first turn. */
+  private begin(
     projectId: string,
     idea: string,
-    mode: ProjectMode = 'build',
-  ): Promise<{ sessionId: string; reply: ScopingReply; asked: number }> {
+    mode: ProjectMode,
+    prompt: string,
+    extra: Pick<WizardSession, 'planOnly' | 'fallbackPlan' | 'fallbackName'>,
+  ): { sessionId: string; reply: Promise<ScopingReply>; ws: WizardSession } {
     const session = createSession(this.db, projectId, null, 'Scoping')
     const ws: WizardSession = {
       handle: undefined as unknown as SessionHandle,
@@ -193,19 +224,55 @@ export class WizardOrchestrator {
       pending: null,
       timer: null,
       settled: false,
+      ...extra,
     }
     this.sessions.set(session.id, ws)
-    const next = this.awaitTurn(session.id)
+    const reply = this.awaitTurn(session.id)
     ws.handle = this.runner(
-      { prompt: scopingPrompt(idea, mode), allowedTools: [], cwd: tmpdir() },
+      { prompt, allowedTools: [], cwd: tmpdir() },
       {
         onMessage: (msg) => this.ingest(session.id, msg),
         onError: () => this.degrade(session.id),
         onClose: () => this.degrade(session.id),
       },
     )
-    const reply = await next
-    return { sessionId: session.id, reply, asked: ws.asked }
+    return { sessionId: session.id, reply, ws }
+  }
+
+  async startScoping(
+    projectId: string,
+    idea: string,
+    mode: ProjectMode = 'build',
+  ): Promise<{ sessionId: string; reply: ScopingReply; asked: number }> {
+    const { sessionId, reply, ws } = this.begin(projectId, idea, mode, scopingPrompt(idea, mode), {
+      planOnly: false,
+      fallbackPlan: null,
+      fallbackName: '',
+    })
+    return { sessionId, reply: await reply, asked: ws.asked }
+  }
+
+  /**
+   * Regenerate the plan from a change note WITHOUT re-running the interview.
+   * Opens a fresh one-shot session seeded with the plan-in-hand, so it works
+   * even after the local core was restarted and the original session is gone.
+   */
+  async revisePlan(
+    projectId: string,
+    idea: string,
+    mode: ProjectMode,
+    plan: PlanBlock[],
+    name: string,
+    note: string,
+  ): Promise<{ sessionId: string; reply: ScopingReply; asked: number }> {
+    const { sessionId, reply, ws } = this.begin(
+      projectId,
+      idea,
+      mode,
+      revisePrompt(idea, mode, plan, name, note),
+      { planOnly: true, fallbackPlan: plan, fallbackName: name },
+    )
+    return { sessionId, reply: await reply, asked: ws.asked }
   }
 
   async answerScoping(
@@ -254,6 +321,19 @@ export class WizardOrchestrator {
     if (text) ws.buffer += `\n${text}`
     if (msg.type !== 'result') return
 
+    // Revision session: take the agent's plan; if it returned anything else (or
+    // garbage), keep the user's existing plan rather than dead-end or replace it.
+    if (ws.planOnly) {
+      let parsed = classifyScoping(extractJson(ws.buffer))
+      if (parsed?.kind === 'plan') {
+        if (ws.mode === 'iterate' && parsed.plan.length > 1) parsed = { ...parsed, plan: [parsed.plan[0]!] }
+        this.resolve(sessionId, parsed)
+      } else {
+        this.resolve(sessionId, this.fallbackReply(ws))
+      }
+      return
+    }
+
     const cap = ws.mode === 'iterate' ? ITERATE_ROUNDS : SCOPING_TOTAL
     let parsed = classifyScoping(extractJson(ws.buffer))
     if (parsed) {
@@ -285,6 +365,15 @@ export class WizardOrchestrator {
   private degrade(sessionId: string): void {
     const ws = this.sessions.get(sessionId)
     if (!ws || ws.settled || !ws.pending) return
-    this.resolve(sessionId, defaultPlan(ws.idea, ws.mode))
+    // A crashed revision keeps the user's current plan, not a generic default.
+    this.resolve(sessionId, ws.planOnly ? this.fallbackReply(ws) : defaultPlan(ws.idea, ws.mode))
+  }
+
+  /** The plan to return when a revision can't produce a new one — the plan-in-hand. */
+  private fallbackReply(ws: WizardSession): ScopingReply {
+    if (ws.fallbackPlan && ws.fallbackPlan.length > 0) {
+      return { kind: 'plan', name: ws.fallbackName, plan: ws.fallbackPlan }
+    }
+    return defaultPlan(ws.idea, ws.mode)
   }
 }

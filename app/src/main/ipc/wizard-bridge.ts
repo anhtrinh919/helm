@@ -4,6 +4,7 @@ import {
   CH,
   StartScopingRequest,
   AnswerScopingRequest,
+  RevisePlanRequest,
   ApprovePlanRequest,
   SaveWizardStateRequest,
   GetWizardStateRequest,
@@ -76,6 +77,16 @@ export function registerWizardBridge(
       const { sessionId, answer } = AnswerScopingRequest.parse(raw)
       const { reply, asked } = await wizard.answerScoping(sessionId, answer)
       return toResponse(sessionId, reply, asked)
+    } catch (e) {
+      return mapError(e)
+    }
+  })
+
+  ipcMain.handle(CH.wizardRevise, async (_e, raw: unknown) => {
+    try {
+      const { projectId, idea, mode, name, plan, note } = RevisePlanRequest.parse(raw)
+      const out = await wizard.revisePlan(projectId, idea, mode ?? 'build', plan, name, note)
+      return toResponse(out.sessionId, out.reply, out.asked)
     } catch (e) {
       return mapError(e)
     }

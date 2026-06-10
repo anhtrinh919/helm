@@ -312,6 +312,17 @@ export const ApprovePlanRequest = z.object({
   name: z.string().min(1).max(200),
   plan: z.array(PlanBlock).min(1),
 })
+/** Phase 4: regenerate the plan from a change note without re-running the
+ *  interview. Carries the full plan-in-hand, so it works even after the local
+ *  core was restarted and the live scoping session is gone. */
+export const RevisePlanRequest = z.object({
+  projectId: z.string(),
+  idea: z.string().min(1).max(2000),
+  mode: ProjectMode.optional(),
+  name: z.string().min(1).max(200),
+  plan: z.array(PlanBlock).min(1),
+  note: z.string().min(1).max(2000),
+})
 
 /** The scoping session's reply: another question, or the finished plan. */
 export const WizardScopingResponse = z.discriminatedUnion('kind', [
@@ -586,6 +597,7 @@ export const CH = {
   // new project wizard (Group 6)
   wizardStartScoping: 'wizard:start-scoping',
   wizardAnswer: 'wizard:answer-question',
+  wizardRevise: 'wizard:revise-plan',
   wizardApprove: 'wizard:approve-plan',
   // live preview (Phase 2)
   previewGetState: 'preview:get-state',

@@ -237,15 +237,14 @@ export const useWizard = create<WizardState>((set, get) => {
     },
 
     revisePlan: async (note) => {
-      const sid = get().sessionId
-      if (!sid || !note.trim()) return
-      // Same live session that produced the plan — ask it to adjust the plan from
-      // the user's note. Go to the thinking state (no plan, no question) meanwhile.
+      const { projectId, idea, mode, plan, name } = get()
+      if (!projectId || !plan || !note.trim()) return
+      // Stateless by design: a fresh one-shot session is seeded with the plan
+      // in hand, so revising works even after the local core was restarted (the
+      // original live scoping session no longer needs to exist). Go to the
+      // thinking state (no plan, no question) meanwhile.
       set({ step: 'scoping', question: null, questions: null, plan: null })
-      const msg =
-        `Revise the plan based on this feedback, then reply with ONLY the updated ` +
-        `plan JSON in the same format (do not ask any more questions): ${note.trim()}`
-      const res = await helm.wizard.answerScoping(sid, msg)
+      const res = await helm.wizard.revisePlan(projectId, idea, mode, name, plan, note.trim())
       if (isIpcError(res)) {
         set({ step: 'error' })
         return
