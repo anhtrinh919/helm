@@ -35,6 +35,26 @@ describe('classifyScoping', () => {
     const r = classifyScoping({ ask: { question: 'Why?', type: 'freetext' } })
     expect(r).toEqual({ kind: 'question', question: { type: 'freetext', question: 'Why?' } })
   })
+  it('reads a batch of questions', () => {
+    const r = classifyScoping({
+      ask_batch: {
+        questions: [
+          { question: 'Who?', type: 'buttons', options: ['Me', 'Team'] },
+          { question: 'Why?', type: 'freetext' },
+        ],
+      },
+    })
+    expect(r).toEqual({
+      kind: 'question_batch',
+      questions: [
+        { type: 'buttons', question: 'Who?', options: ['Me', 'Team'] },
+        { type: 'freetext', question: 'Why?' },
+      ],
+    })
+  })
+  it('rejects an empty batch', () => {
+    expect(classifyScoping({ ask_batch: { questions: [{}] } })).toBeNull()
+  })
   it('reads a plan with steps and gives each an id', () => {
     const r = classifyScoping({ plan: { name: 'Helm', steps: [{ title: 'A', detail: 'x' }, { title: 'B' }] } })
     expect(r?.kind).toBe('plan')
@@ -100,6 +120,29 @@ describe('WizardOrchestrator', () => {
     expect(fr.replies).toEqual(['Me'])
     expect(ans.reply.kind).toBe('plan')
     if (ans.reply.kind === 'plan') expect(ans.reply.name).toBe('Budgeteer')
+  })
+
+  it('runs multiple question batches before the plan, counting rounds', async () => {
+    const fr = fakeRunner()
+    const orch = new WizardOrchestrator(db, fr.runner)
+    const project = createProject(db, 'tmp')
+
+    const startP = orch.startScoping(project.id, 'a booking app')
+    turn(fr.cb(), '{"ask_batch":{"questions":[{"question":"Who books?","type":"freetext"},{"question":"Paid?","type":"buttons","options":["Yes","No"]}]}}')
+    const start = await startP
+    expect(start.reply.kind).toBe('question_batch')
+    expect(start.asked).toBe(1)
+
+    const r2P = orch.answerScoping(start.sessionId, 'Q: Who books?\nA: clients\n\nQ: Paid?\nA: Yes')
+    turn(fr.cb(), '{"ask_batch":{"questions":[{"question":"Refunds?","type":"buttons","options":["Yes","No"]}]}}')
+    const r2 = await r2P
+    expect(r2.reply.kind).toBe('question_batch')
+    expect(r2.asked).toBe(2)
+
+    const planP = orch.answerScoping(start.sessionId, 'Q: Refunds?\nA: No')
+    turn(fr.cb(), '{"plan":{"name":"Booker","steps":[{"title":"Shell"},{"title":"Calendar"}]}}')
+    const plan = await planP
+    expect(plan.reply.kind).toBe('plan')
   })
 
   it('degrades an unparseable turn to a follow-up question, not a dead-end', async () => {

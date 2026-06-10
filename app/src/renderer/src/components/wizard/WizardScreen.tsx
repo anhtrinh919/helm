@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useWizard } from '../../store/wizard'
 import { useProjects } from '../../store/projects'
 import { ScopingQA } from './ScopingQA'
+import { BatchQA } from './BatchQA'
 import { PlanReview } from './PlanReview'
 import { Icon } from '../ui/Icon'
 import { ClaudeSignal } from '../ui/ClaudeSignal'
@@ -173,11 +174,13 @@ export function WizardScreen({ projectId }: { projectId: string }): React.JSX.El
   const step = useWizard((s) => s.step)
   const idea = useWizard((s) => s.idea)
   const question = useWizard((s) => s.question)
+  const questions = useWizard((s) => s.questions)
   const qStep = useWizard((s) => s.qStep)
   const qTotal = useWizard((s) => s.qTotal)
   const plan = useWizard((s) => s.plan)
   const name = useWizard((s) => s.name)
   const answer = useWizard((s) => s.answer)
+  const answerBatch = useWizard((s) => s.answerBatch)
   const approve = useWizard((s) => s.approve)
   const editPlan = useWizard((s) => s.editPlan)
   const setName = useWizard((s) => s.setName)
@@ -185,6 +188,21 @@ export function WizardScreen({ projectId }: { projectId: string }): React.JSX.El
 
   if (step === 'idea') {
     return <IdeaStep />
+  }
+
+  if (step === 'scoping' && questions !== null) {
+    return (
+      <WizardShell>
+        <GoalPin>{idea || 'Your idea'}</GoalPin>
+        <BatchQA
+          questions={questions}
+          round={qStep}
+          totalRounds={qTotal}
+          onSubmit={(a) => void answerBatch(a)}
+          onBack={() => useWizard.getState().backToIdea()}
+        />
+      </WizardShell>
+    )
   }
 
   if (step === 'scoping' && question === null) {

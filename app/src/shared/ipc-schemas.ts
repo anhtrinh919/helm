@@ -321,6 +321,15 @@ export const WizardScopingResponse = z.discriminatedUnion('kind', [
     total: z.number(),
   }),
   z.object({
+    kind: z.literal('question_batch'),
+    sessionId: z.string(),
+    questions: z.array(DecisionPrompt),
+    /** 1-based index of this batch in the interview, for a "Round N of M" label. */
+    round: z.number(),
+    /** Upper bound on batches the interview may run (advisory, for the label). */
+    totalRounds: z.number(),
+  }),
+  z.object({
     kind: z.literal('plan'),
     sessionId: z.string(),
     name: z.string(),

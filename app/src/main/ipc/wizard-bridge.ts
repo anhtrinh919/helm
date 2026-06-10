@@ -44,6 +44,15 @@ function toResponse(sessionId: string, reply: ScopingReply, asked: number): Wiza
   if (reply.kind === 'question') {
     return { kind: 'question', sessionId, question: reply.question, step: asked, total: SCOPING_TOTAL }
   }
+  if (reply.kind === 'question_batch') {
+    return {
+      kind: 'question_batch',
+      sessionId,
+      questions: reply.questions,
+      round: asked,
+      totalRounds: SCOPING_TOTAL,
+    }
+  }
   return { kind: 'plan', sessionId, name: reply.name, plan: reply.plan }
 }
 

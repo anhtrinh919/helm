@@ -20,6 +20,8 @@ interface WizardState {
   mode: ProjectMode
   /** null while the agent is thinking up the next question. */
   question: DecisionPrompt | null
+  /** A batch of questions to answer together (decision-tree round). null otherwise. */
+  questions: DecisionPrompt[] | null
   qStep: number
   qTotal: number
   plan: PlanBlock[] | null
@@ -34,6 +36,8 @@ interface WizardState {
   /** Create the project and open the scoping conversation (in the chosen mode). */
   begin: (idea: string) => Promise<void>
   answer: (answer: string) => Promise<void>
+  /** Submit a full batch of answers (one per question in the current round). */
+  answerBatch: (answers: string[]) => Promise<void>
   approve: () => Promise<void>
   editPlan: (plan: PlanBlock[]) => void
   setName: (name: string) => void
@@ -49,6 +53,7 @@ interface WizardSnapshot {
   sessionId: string | null
   step: WizardStep
   question: DecisionPrompt | null
+  questions: DecisionPrompt[] | null
   qStep: number
   qTotal: number
   plan: PlanBlock[] | null
@@ -58,6 +63,7 @@ interface WizardSnapshot {
 const BLANK = {
   sessionId: null,
   question: null,
+  questions: null as DecisionPrompt[] | null,
   qStep: 0,
   qTotal: 0,
   plan: null as PlanBlock[] | null,
@@ -75,6 +81,7 @@ export const useWizard = create<WizardState>((set, get) => {
       sessionId: s.sessionId,
       step: s.step === 'approving' ? 'plan_review' : s.step,
       question: s.question,
+      questions: s.questions,
       qStep: s.qStep,
       qTotal: s.qTotal,
       plan: s.plan,
@@ -89,11 +96,28 @@ export const useWizard = create<WizardState>((set, get) => {
         step: 'scoping',
         sessionId: res.sessionId,
         question: res.question,
+        questions: null,
         qStep: res.step,
         qTotal: res.total,
       })
+    } else if (res.kind === 'question_batch') {
+      set({
+        step: 'scoping',
+        sessionId: res.sessionId,
+        question: null,
+        questions: res.questions,
+        qStep: res.round,
+        qTotal: res.totalRounds,
+      })
     } else {
-      set({ step: 'plan_review', sessionId: res.sessionId, plan: res.plan, name: res.name })
+      set({
+        step: 'plan_review',
+        sessionId: res.sessionId,
+        question: null,
+        questions: null,
+        plan: res.plan,
+        name: res.name,
+      })
     }
     persist()
   }
@@ -114,7 +138,7 @@ export const useWizard = create<WizardState>((set, get) => {
     backToIdea: () => {
       // Return to the idea-input step with the idea preserved and editable. The
       // forward-only scoping session is dropped; resubmitting restarts it.
-      set({ step: 'idea', question: null, qStep: 0, qTotal: 0 })
+      set({ step: 'idea', question: null, questions: null, qStep: 0, qTotal: 0 })
       persist()
     },
 
@@ -164,8 +188,25 @@ export const useWizard = create<WizardState>((set, get) => {
     answer: async (answer) => {
       const sid = get().sessionId
       if (!sid) return
-      set({ step: 'scoping', question: null }) // thinking…
+      set({ step: 'scoping', question: null, questions: null }) // thinking…
       const res = await helm.wizard.answerScoping(sid, answer)
+      if (isIpcError(res)) {
+        set({ step: 'error' })
+        return
+      }
+      apply(res)
+    },
+
+    answerBatch: async (answers) => {
+      const sid = get().sessionId
+      const batch = get().questions
+      if (!sid || !batch) return
+      // Pair each question with its answer so the agent reads the round as a block.
+      const reply = batch
+        .map((q, i) => `Q: ${q.question}\nA: ${answers[i]?.trim() || '(no preference — you choose)'}`)
+        .join('\n\n')
+      set({ step: 'scoping', question: null, questions: null }) // thinking…
+      const res = await helm.wizard.answerScoping(sid, reply)
       if (isIpcError(res)) {
         set({ step: 'error' })
         return

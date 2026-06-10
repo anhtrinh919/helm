@@ -23,36 +23,46 @@ import {
  * plan, so the wizard never dead-ends.
  */
 
+/** Max scoping rounds (batches of questions) before we force a plan. */
 export const SCOPING_TOTAL = 4
+const ITERATE_ROUNDS = 2
 
 export type ScopingReply =
   | { kind: 'question'; question: DecisionPrompt }
+  | { kind: 'question_batch'; questions: DecisionPrompt[] }
   | { kind: 'plan'; name: string; plan: PlanBlock[] }
 
 type Runner = (opts: StartSessionOptions, cb: SessionCallbacks) => SessionHandle
 
 function scopingPrompt(idea: string, mode: ProjectMode = 'build'): string {
+  const batchShape = `{"ask_batch":{"questions":[{"question":"...","type":"buttons","options":["..",".."]}, ...]}}`
+  const buttonsRule = `PREFER "type":"buttons" with 2-4 short concrete options; use "type":"freetext" only when the answer genuinely needs their own words (e.g. a name).`
+  const jsonRule = `Output RAW JSON only — no code fences, no prose around it. CRITICAL: never put a double-quote character inside any question or option text (don't quote words); keep every label plain so the JSON always parses.`
   if (mode === 'iterate') {
     // Iterate-from-scratch: the FIRST feature and the app scaffold are ONE step —
     // the user is never parked on an empty canvas. Plan has exactly one block.
     return [
       `A non-technical person wants to start iterating on a brand-new app. Their first feature request: "${idea}".`,
-      `You are scoping JUST this first piece — not a full product plan. Ask up to 2 short, high-leverage questions, ONE per turn.`,
-      `Reply with ONLY a single JSON object — no prose, no code fences.`,
-      `PREFER buttons so they can just tap an answer: {"ask":{"question":"...","type":"buttons","options":["..",".."]}} (2-4 short, concrete options).`,
-      `Only use {"ask":{"question":"...","type":"freetext"}} when the answer genuinely needs their own words (e.g. a name).`,
+      `You are scoping JUST this first piece — not a full product plan — through a short, adaptive interview.`,
+      `Ask your questions in BATCHES of 2-3 short, high-leverage questions per turn — never one at a time.`,
+      `Run 1-2 batches total: read their answers to the first batch and only ask a second batch if something important is still genuinely open. Otherwise go straight to the plan.`,
+      `Reply with ONLY a single JSON object per turn. For a batch of questions: ${batchShape}`,
+      jsonRule,
+      buttonsRule,
       `When you have enough, reply: {"plan":{"name":"<short product name, 1-4 words>","steps":[{"title":"<short — the feature itself, not 'set up'>","detail":"<one sentence: scaffold a minimal app AND deliver this feature in one pass>"}]}} with EXACTLY 1 step.`,
-      `Ask your first question now.`,
+      `Send your first batch now.`,
     ].join(' ')
   }
   return [
     `A non-technical person wants to build: "${idea}".`,
-    `You are scoping it into a buildable plan. Ask up to ${SCOPING_TOTAL} short, high-leverage questions, ONE per turn.`,
-    `Reply with ONLY a single JSON object — no prose, no code fences.`,
-    `PREFER buttons so they can just tap an answer: {"ask":{"question":"...","type":"buttons","options":["..",".."]}} (2-4 short, concrete options).`,
-    `Only use {"ask":{"question":"...","type":"freetext"}} when the answer genuinely needs their own words (e.g. a name).`,
+    `You are scoping it into a buildable plan through a short, adaptive decision-tree interview.`,
+    `Ask your questions in BATCHES of 4-5 short, high-leverage questions per turn — never one at a time, never all at once.`,
+    `Run 2-4 batches total. After each batch, use their answers to decide the NEXT batch: drill deeper where their choices opened a real fork, skip what is already settled. Stop asking once you can write a confident plan.`,
+    `Reply with ONLY a single JSON object per turn. For a batch of questions: ${batchShape}`,
+    jsonRule,
+    buttonsRule,
     `When you have enough, reply: {"plan":{"name":"<short product name, 1-4 words>","steps":[{"title":"<short>","detail":"<one sentence>"}]}} with 4-7 steps.`,
-    `Ask your first question now.`,
+    `Send your first batch now.`,
   ].join(' ')
 }
 
@@ -64,8 +74,9 @@ export function classifyScoping(obj: unknown): ScopingReply | null {
   if (!obj || typeof obj !== 'object') return null
   const o = obj as Record<string, unknown>
 
-  if (o.ask && typeof o.ask === 'object') {
-    const ask = o.ask as Record<string, unknown>
+  const toQuestion = (raw: unknown): DecisionPrompt | null => {
+    if (!raw || typeof raw !== 'object') return null
+    const ask = raw as Record<string, unknown>
     const question = typeof ask.question === 'string' ? ask.question.trim() : ''
     if (!question) return null
     const type = ask.type === 'buttons' ? 'buttons' : 'freetext'
@@ -73,7 +84,24 @@ export function classifyScoping(obj: unknown): ScopingReply | null {
       type === 'buttons' && Array.isArray(ask.options)
         ? ask.options.filter((x): x is string => typeof x === 'string').slice(0, 4)
         : undefined
-    return { kind: 'question', question: { type, question, ...(options ? { options } : {}) } }
+    return { type, question, ...(options ? { options } : {}) }
+  }
+
+  if (o.ask_batch && typeof o.ask_batch === 'object') {
+    const batch = o.ask_batch as Record<string, unknown>
+    const raw = Array.isArray(batch.questions) ? batch.questions : []
+    const questions = raw
+      .map(toQuestion)
+      .filter((q): q is DecisionPrompt => q !== null)
+      .slice(0, 6)
+    if (questions.length === 0) return null
+    return { kind: 'question_batch', questions }
+  }
+
+  if (o.ask && typeof o.ask === 'object') {
+    const question = toQuestion(o.ask)
+    if (!question) return null
+    return { kind: 'question', question }
   }
 
   if (o.plan && typeof o.plan === 'object') {
@@ -207,7 +235,7 @@ export class WizardOrchestrator {
     }
     const { resolve } = ws.pending
     ws.pending = null
-    if (reply.kind === 'question') ws.asked++
+    if (reply.kind === 'question' || reply.kind === 'question_batch') ws.asked++
     else {
       ws.settled = true
       updateSessionStatus(this.db, sessionId, 'done')
@@ -222,17 +250,23 @@ export class WizardOrchestrator {
     if (text) ws.buffer += `\n${text}`
     if (msg.type !== 'result') return
 
+    const cap = ws.mode === 'iterate' ? ITERATE_ROUNDS : SCOPING_TOTAL
     let parsed = classifyScoping(extractJson(ws.buffer))
     if (parsed) {
       // Iterate mode contract: exactly one combined scaffold+feature step.
       if (parsed.kind === 'plan' && ws.mode === 'iterate' && parsed.plan.length > 1) {
         parsed = { ...parsed, plan: [parsed.plan[0]!] }
       }
+      // Cap the interview: once enough rounds are asked, force a plan instead of
+      // letting the agent keep grilling.
+      if ((parsed.kind === 'question' || parsed.kind === 'question_batch') && ws.asked >= cap) {
+        this.resolve(sessionId, defaultPlan(ws.idea, ws.mode))
+        return
+      }
       this.resolve(sessionId, parsed)
       return
     }
     // Unparseable turn: keep the conversation moving rather than dead-end.
-    const cap = ws.mode === 'iterate' ? 2 : SCOPING_TOTAL
     if (ws.asked >= cap) this.resolve(sessionId, defaultPlan(ws.idea, ws.mode))
     else
       this.resolve(sessionId, {
