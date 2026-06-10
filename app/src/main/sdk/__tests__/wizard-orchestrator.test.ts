@@ -55,6 +55,15 @@ describe('classifyScoping', () => {
   it('rejects an empty batch', () => {
     expect(classifyScoping({ ask_batch: { questions: [{}] } })).toBeNull()
   })
+  it('preserves the multi flag on a multi-select question', () => {
+    const r = classifyScoping({
+      ask_batch: { questions: [{ question: 'Genres?', type: 'buttons', multi: true, options: ['A', 'B'] }] },
+    })
+    expect(r).toEqual({
+      kind: 'question_batch',
+      questions: [{ type: 'buttons', question: 'Genres?', options: ['A', 'B'], multi: true }],
+    })
+  })
   it('reads a plan with steps and gives each an id', () => {
     const r = classifyScoping({ plan: { name: 'Helm', steps: [{ title: 'A', detail: 'x' }, { title: 'B' }] } })
     expect(r?.kind).toBe('plan')

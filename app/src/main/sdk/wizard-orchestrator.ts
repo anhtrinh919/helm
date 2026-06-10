@@ -36,7 +36,8 @@ type Runner = (opts: StartSessionOptions, cb: SessionCallbacks) => SessionHandle
 
 function scopingPrompt(idea: string, mode: ProjectMode = 'build'): string {
   const batchShape = `{"ask_batch":{"questions":[{"question":"...","type":"buttons","options":["..",".."]}, ...]}}`
-  const buttonsRule = `PREFER "type":"buttons" with 2-4 short concrete options; use "type":"freetext" only when the answer genuinely needs their own words (e.g. a name).`
+  const buttonsRule = `PREFER "type":"buttons" with 2-5 short concrete options; use "type":"freetext" only when the answer genuinely needs their own words (e.g. a name).`
+  const multiRule = `IMPORTANT: whenever a question could have more than one true answer — anything phrased as "which of these", "what kinds", "select all that apply", picking features/categories/genres — make it "type":"buttons" with concrete options AND set "multi":true. Example: {"question":"Which genres should members pick from?","type":"buttons","multi":true,"options":["Fiction","Non-fiction","Mystery","Sci-fi","Romance"]}. Do NOT turn a multi-answer question into freetext.`
   const jsonRule = `Output RAW JSON only — no code fences, no prose around it. CRITICAL: never put a double-quote character inside any question or option text (don't quote words); keep every label plain so the JSON always parses.`
   if (mode === 'iterate') {
     // Iterate-from-scratch: the FIRST feature and the app scaffold are ONE step —
@@ -49,6 +50,7 @@ function scopingPrompt(idea: string, mode: ProjectMode = 'build'): string {
       `Reply with ONLY a single JSON object per turn. For a batch of questions: ${batchShape}`,
       jsonRule,
       buttonsRule,
+      multiRule,
       `When you have enough, reply: {"plan":{"name":"<short product name, 1-4 words>","steps":[{"title":"<short — the feature itself, not 'set up'>","detail":"<one sentence: scaffold a minimal app AND deliver this feature in one pass>"}]}} with EXACTLY 1 step.`,
       `Send your first batch now.`,
     ].join(' ')
@@ -61,6 +63,7 @@ function scopingPrompt(idea: string, mode: ProjectMode = 'build'): string {
     `Reply with ONLY a single JSON object per turn. For a batch of questions: ${batchShape}`,
     jsonRule,
     buttonsRule,
+    multiRule,
     `When you have enough, reply: {"plan":{"name":"<short product name, 1-4 words>","steps":[{"title":"<short>","detail":"<one sentence>"}]}} with 4-7 steps.`,
     `Send your first batch now.`,
   ].join(' ')
@@ -82,9 +85,10 @@ export function classifyScoping(obj: unknown): ScopingReply | null {
     const type = ask.type === 'buttons' ? 'buttons' : 'freetext'
     const options =
       type === 'buttons' && Array.isArray(ask.options)
-        ? ask.options.filter((x): x is string => typeof x === 'string').slice(0, 4)
+        ? ask.options.filter((x): x is string => typeof x === 'string').slice(0, 6)
         : undefined
-    return { type, question, ...(options ? { options } : {}) }
+    const multi = type === 'buttons' && ask.multi === true ? true : undefined
+    return { type, question, ...(options ? { options } : {}), ...(multi ? { multi } : {}) }
   }
 
   if (o.ask_batch && typeof o.ask_batch === 'object') {

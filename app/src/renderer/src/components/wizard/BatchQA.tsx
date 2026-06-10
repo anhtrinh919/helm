@@ -33,6 +33,13 @@ export function BatchQA({
     setOwnAnswer((prev) => prev.map((o, j) => (j === i ? on : o)))
     if (on) setAnswer(i, '')
   }
+  // Multi-select stores the chosen options as a comma-joined list in the same slot.
+  const selectedSet = (i: number): string[] => answers[i].split(', ').filter(Boolean)
+  const toggleMulti = (i: number, opt: string): void => {
+    const cur = selectedSet(i)
+    const next = cur.includes(opt) ? cur.filter((o) => o !== opt) : [...cur, opt]
+    setAnswer(i, next.join(', '))
+  }
 
   const n = Math.max(1, round)
   const m = Math.max(totalRounds, round)
@@ -69,27 +76,34 @@ export function BatchQA({
         {questions.map((q, i) => {
           const isButtons = q.type === 'buttons' && q.options && q.options.length > 0
           const own = ownAnswer[i]
+          const multi = q.multi === true
           return (
             <div key={i}>
-              <div className="hm-display hm-h-s" style={{ marginBottom: 12, lineHeight: 1.2 }}>
+              <div className="hm-display hm-h-s" style={{ marginBottom: multi ? 4 : 12, lineHeight: 1.2 }}>
                 <span style={{ color: 'var(--ink-3)', fontSize: '0.78em', marginRight: 8 }}>
                   {i + 1}.
                 </span>
                 {q.question}
               </div>
+              {multi && (
+                <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 12 }}>
+                  Pick all that apply
+                </div>
+              )}
 
               {isButtons && !own ? (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {q.options!.map((opt) => {
-                    const isSel = answers[i] === opt
+                    const isSel = multi ? selectedSet(i).includes(opt) : answers[i] === opt
+                    const choose = (): void => (multi ? toggleMulti(i, opt) : setAnswer(i, opt))
                     return (
                       <div
                         key={opt}
-                        onClick={() => setAnswer(i, opt)}
+                        onClick={choose}
                         role="button"
                         tabIndex={0}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') setAnswer(i, opt)
+                          if (e.key === 'Enter' || e.key === ' ') choose()
                         }}
                         style={{
                           display: 'flex',
@@ -104,10 +118,26 @@ export function BatchQA({
                           fontWeight: isSel ? 600 : 500,
                         }}
                       >
-                        {isSel && (
-                          <span style={{ display: 'grid', placeItems: 'center', color: 'var(--ink)' }}>
-                            <Icon n="check" size={15} />
+                        {multi ? (
+                          <span
+                            style={{
+                              width: 16,
+                              height: 16,
+                              border: `2px solid ${isSel ? 'var(--ink)' : 'var(--line-2)'}`,
+                              background: isSel ? 'var(--lime)' : 'transparent',
+                              display: 'grid',
+                              placeItems: 'center',
+                              flex: '0 0 auto',
+                            }}
+                          >
+                            {isSel && <Icon n="check" size={12} />}
                           </span>
+                        ) : (
+                          isSel && (
+                            <span style={{ display: 'grid', placeItems: 'center', color: 'var(--ink)' }}>
+                              <Icon n="check" size={15} />
+                            </span>
+                          )
                         )}
                         {opt}
                       </div>

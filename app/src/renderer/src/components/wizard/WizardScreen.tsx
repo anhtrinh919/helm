@@ -28,8 +28,10 @@ function WizardShell({ children }: { children: React.ReactNode }): React.JSX.Ele
         </span>
         <div style={{ marginLeft: 'auto' }}><ClaudeSignal inline /></div>
       </div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 40px' }}>
-        <div style={{ width: '100%', maxWidth: 680 }}>{children}</div>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', overflowY: 'auto', padding: '40px' }}>
+        {/* margin:auto centres short content vertically but still lets tall content scroll
+            (flex justify-content:center would clip the top of an overflowing column). */}
+        <div style={{ width: '100%', maxWidth: 680, margin: 'auto 0' }}>{children}</div>
       </div>
     </div>
   )

@@ -91,6 +91,8 @@ export const DecisionPrompt = z.object({
   question: z.string(),
   options: z.array(z.string()).optional(),
   answer: z.string().optional(),
+  /** Buttons question where more than one option may be chosen. */
+  multi: z.boolean().optional(),
 })
 export type DecisionPrompt = z.infer<typeof DecisionPrompt>
 
