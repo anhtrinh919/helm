@@ -12,14 +12,19 @@ export function ScopingQA({
   step,
   total,
   onAnswer,
+  onBack,
 }: {
   question: DecisionPrompt | null
   step: number
   total: number
   onAnswer: (answer: string) => void
+  onBack: () => void
 }): React.JSX.Element {
   const [text, setText] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
+  // When true on a buttons question, the user is typing their own answer instead
+  // of picking an option.
+  const [ownAnswer, setOwnAnswer] = useState(false)
 
   if (!question) {
     return (
@@ -65,7 +70,7 @@ export function ScopingQA({
       </div>
       <div style={{ marginBottom: 22 }} />
 
-      {isButtons ? (
+      {isButtons && !ownAnswer ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {question.options!.map((opt) => {
             const isSel = selected === opt
@@ -118,15 +123,15 @@ export function ScopingQA({
           })}
           <div
             style={{ marginTop: 4, fontSize: 13.5, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer' }}
-            onClick={() => submit('No preference — you choose')}
+            onClick={() => setOwnAnswer(true)}
             role="button"
             tabIndex={0}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') submit('No preference — you choose') }}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setOwnAnswer(true) }}
           >
             <Icon n="pencil-simple" /> Or describe it in your own words
           </div>
           <div style={{ display: 'flex', alignItems: 'center', marginTop: 16 }}>
-            <button className="hm-btn hm-btn--ghost" onClick={() => onAnswer('No preference — you choose')}>
+            <button className="hm-btn hm-btn--ghost" onClick={onBack}>
               <Icon n="arrow-left" /> Back
             </button>
           </div>
@@ -139,13 +144,21 @@ export function ScopingQA({
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && text.trim()) submit(text)
             }}
-            placeholder="Describe it in your own words…"
+            placeholder="Type your answer…"
             rows={4}
             autoFocus
             className="hm-input hm-input--lg"
           />
           <div style={{ display: 'flex', alignItems: 'center', marginTop: 20, gap: 10 }}>
-            <button className="hm-btn hm-btn--ghost" onClick={() => onAnswer('No preference — you choose')}>
+            <button
+              className="hm-btn hm-btn--ghost"
+              onClick={() => {
+                // If the user opened "your own words" on a buttons question, Back
+                // returns to the options; otherwise it steps back to the idea.
+                if (isButtons) { setOwnAnswer(false); setText('') }
+                else onBack()
+              }}
+            >
               <Icon n="arrow-left" /> Back
             </button>
             <button

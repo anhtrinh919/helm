@@ -26,6 +26,11 @@ interface WizardState {
   name: string
   /** Front-door entry: open a fresh wizard at the idea-input step in the chosen mode. */
   startNew: (mode: ProjectMode) => void
+  /** Step back from the Q&A to the idea-input, keeping the idea editable. */
+  backToIdea: () => void
+  /** Submit the idea from the idea-input step: reuses the project if one exists
+   *  (came back to edit), else creates it. Then (re)starts the scoping interview. */
+  reviseIdea: (idea: string) => Promise<void>
   /** Create the project and open the scoping conversation (in the chosen mode). */
   begin: (idea: string) => Promise<void>
   answer: (answer: string) => Promise<void>
@@ -104,6 +109,31 @@ export const useWizard = create<WizardState>((set, get) => {
       set({ idea: '', projectId: null, step: 'idea', mode, ...BLANK })
       // No project exists yet — open the wizard view on the idea-input step.
       useProjects.getState().openWizard('')
+    },
+
+    backToIdea: () => {
+      // Return to the idea-input step with the idea preserved and editable. The
+      // forward-only scoping session is dropped; resubmitting restarts it.
+      set({ step: 'idea', question: null, qStep: 0, qTotal: 0 })
+      persist()
+    },
+
+    reviseIdea: async (idea) => {
+      const projectId = get().projectId
+      if (!projectId) {
+        await get().begin(idea)
+        return
+      }
+      // Reuse the existing project (we came back to edit) — restart scoping with
+      // the edited idea instead of creating a second project.
+      set({ idea, step: 'scoping', ...BLANK })
+      useProjects.getState().openWizard(projectId)
+      const res = await helm.wizard.startScoping(projectId, idea, get().mode)
+      if (isIpcError(res)) {
+        set({ step: 'error' })
+        return
+      }
+      apply(res)
     },
 
     begin: async (idea) => {

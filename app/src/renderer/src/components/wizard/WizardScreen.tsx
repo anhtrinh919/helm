@@ -46,15 +46,16 @@ function GoalPin({ children }: { children: React.ReactNode }): React.JSX.Element
   )
 }
 
-/** Idea input step — the entry point of the wizard. */
+/** Idea input step — the entry point of the wizard (also reached via Back). */
 function IdeaStep(): React.JSX.Element {
-  const begin = useWizard((s) => s.begin)
+  const reviseIdea = useWizard((s) => s.reviseIdea)
+  const existingIdea = useWizard((s) => s.idea)
 
   const handleSubmit = (form: React.FormEvent<HTMLFormElement>): void => {
     form.preventDefault()
     const data = new FormData(form.currentTarget)
     const idea = (data.get('idea') as string | null)?.trim() ?? ''
-    if (idea) void begin(idea)
+    if (idea) void reviseIdea(idea)
   }
 
   return (
@@ -69,6 +70,7 @@ function IdeaStep(): React.JSX.Element {
           name="idea"
           className="hm-input hm-input--lg"
           rows={3}
+          defaultValue={existingIdea}
           placeholder="A sign-up page for my neighbourhood book club, where people can reserve a seat at the next meet."
           autoFocus
         />
@@ -198,6 +200,7 @@ export function WizardScreen({ projectId }: { projectId: string }): React.JSX.El
           step={qStep}
           total={qTotal}
           onAnswer={(a) => void answer(a)}
+          onBack={() => useWizard.getState().backToIdea()}
         />
       </WizardShell>
     )
